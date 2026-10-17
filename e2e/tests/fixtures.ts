@@ -1,6 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { copyFileSync, mkdtempSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, existsSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +37,17 @@ export const squareX = (n: number) => SQUARE.x0 + n * SQUARE.speed;
 export const ROW = SQUARE.y + SQUARE.size / 2;
 
 export function ffmpeg(args: string[]): void {
-  execFileSync(FFMPEG, ['-hide_banner', '-v', 'error', '-y', ...args]);
+  try {
+    // Single-threaded: many tests generate fixtures in parallel.
+    execFileSync(FFMPEG, ['-hide_banner', '-v', 'error', '-y', '-filter_threads', '1', ...args], {
+      stdio: 'pipe',
+    });
+  } catch (e) {
+    const err = e as { stderr?: Buffer; status?: number; signal?: string };
+    throw new Error(
+      `ffmpeg failed (status ${err.status}, signal ${err.signal}): ${err.stderr?.toString() ?? ''}`,
+    );
+  }
 }
 
 export function makeSquareVideo(
@@ -71,7 +81,7 @@ export function makeSquareVideo(
     '[v]',
   );
   if (opts.audio) args.push('-map', '2:a', '-c:a', 'flac');
-  args.push('-frames:v', String(frames), '-c:v', 'ffv1', '-level', '3', path);
+  args.push('-frames:v', String(frames), '-c:v', 'ffv1', '-level', '3', '-threads', '1', path);
   ffmpeg(args);
   return path;
 }
@@ -152,7 +162,8 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
   ],
 
   server: async ({ media }, use) => {
-    const dir = mkdtempSync(join(tmpdir(), 'mx-e2e-'));
+    // The server reports canonical paths (no symlinks, long names on Windows).
+    const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'mx-e2e-')));
     mkdirSync(join(dir, 'clips'));
     const video = join(dir, 'square.mkv');
     copyFileSync(media.square, video);

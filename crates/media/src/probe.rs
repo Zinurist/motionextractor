@@ -99,9 +99,12 @@ impl Ffmpeg {
                 source,
             })?;
         if !out.status.success() {
-            return Err(MediaError::Probe(
-                String::from_utf8_lossy(&out.stderr).trim().to_owned(),
-            ));
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+            return Err(MediaError::Probe(if stderr.is_empty() {
+                format!("{} ({})", path.display(), out.status)
+            } else {
+                stderr
+            }));
         }
         let json: Value = serde_json::from_slice(&out.stdout)
             .map_err(|e| MediaError::Probe(format!("invalid ffprobe output: {e}")))?;
@@ -142,7 +145,10 @@ fn parse_probe(path: &Path, json: &Value) -> Result<VideoInfo> {
         .or(real)
         .ok_or_else(|| MediaError::Probe("unknown frame rate".into()))?;
 
+    // Matroska keeps per-stream durations in a tag; the container duration may include longer
+    // audio, so it is the last resort.
     let duration = num_field(video, "duration")
+        .or_else(|| tag_duration(video))
         .or_else(|| num_field(&json["format"], "duration"))
         .unwrap_or(0.0);
     let nb_frames = num_field(video, "nb_frames").map(|n| n as u64);
@@ -172,6 +178,19 @@ fn parse_probe(path: &Path, json: &Value) -> Result<VideoInfo> {
         start_time: num_field(&json["format"], "start_time")
             .or_else(|| num_field(video, "start_time"))
             .unwrap_or(0.0),
+    })
+}
+
+/// The `DURATION` stream tag (`HH:MM:SS.fraction`) written by the Matroska muxer.
+fn tag_duration(video: &Value) -> Option<f64> {
+    let tags = video["tags"].as_object()?;
+    let value = tags
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("duration"))?
+        .1
+        .as_str()?;
+    value.split(':').try_fold(0.0, |acc, part| {
+        Some(acc * 60.0 + part.trim().parse::<f64>().ok()?)
     })
 }
 
@@ -238,6 +257,16 @@ mod tests {
         let info = parse_probe(Path::new("a.mkv"), &j).unwrap();
         assert_eq!(info.fps, Rational::new(24000, 1001));
         assert_eq!(info.frame_count, 240);
+    }
+
+    #[test]
+    fn matroska_duration_tag() {
+        let j = json!({"streams": [stream(json!({
+            "duration": null, "nb_frames": null, "tags": {"DURATION": "00:00:01.000000000"}
+        }))], "format": {"duration": "1.034"}});
+        let info = parse_probe(Path::new("a.mkv"), &j).unwrap();
+        assert_eq!(info.frame_count, 30);
+        assert_eq!(info.duration, 1.0);
     }
 
     #[test]

@@ -8,6 +8,8 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,
+  // Every test runs a browser, a server and ffmpeg processes: leave headroom.
+  workers: process.env.CI ? 2 : '50%',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',

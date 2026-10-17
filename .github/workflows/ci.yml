@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+      - name: Install desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev
+      - run: npm ci --prefix web
+      - run: npm ci --prefix e2e
+      - run: cargo fmt --all --check
+      - run: npm --prefix web run build
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy -p motion-extractor --no-default-features --all-targets -- -D warnings
+      - run: npm --prefix web run check
+      - run: npm --prefix web run lint
+      - run: npm --prefix web test
+      - run: npm --prefix e2e run lint
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            browsers: chromium,webkit
+          - os: windows-latest
+            browsers: chromium
+          - os: macos-latest
+            browsers: chromium,webkit
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+
+      - name: Install ffmpeg and desktop dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev xvfb
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - run: ffmpeg -version
+
+      - name: Build the web UI
+        run: |
+          npm ci --prefix web
+          npm --prefix web run build
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Build the app
+        run: cargo build -p motion-extractor
+
+      - name: Desktop smoke test (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 3
+        run: xvfb-run -a target/debug/motion-extractor --smoke-test
+      - name: Desktop smoke test
+        if: runner.os != 'Linux'
+        timeout-minutes: 3
+        shell: bash
+        run: target/debug/motion-extractor --smoke-test
+
+      - name: End-to-end tests
+        shell: bash
+        working-directory: e2e
+        env:
+          MX_BROWSERS: ${{ matrix.browsers }}
+        run: |
+          npm ci
+          npx playwright install --with-deps $(echo "$MX_BROWSERS" | tr ',' ' ')
+          npm test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

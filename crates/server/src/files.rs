@@ -14,9 +14,10 @@ pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)
 }
 
-/// Canonical form of a path that may not exist yet (its parent must).
+/// Canonical form of a path that may not exist yet (its parent must). Uses `dunce` so Windows paths
+/// keep their usual form (no `\\?\` prefix).
 fn canonical(path: &Path) -> std::io::Result<PathBuf> {
-    match path.canonicalize() {
+    match dunce::canonicalize(path) {
         Ok(p) => Ok(p),
         Err(e) => {
             let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
@@ -55,7 +56,7 @@ impl AppState {
             .config
             .roots
             .iter()
-            .filter_map(|r| r.canonicalize().ok())
+            .filter_map(|r| dunce::canonicalize(r).ok())
             .any(|r| full.starts_with(r));
         if allowed {
             Ok(full)
@@ -71,7 +72,7 @@ impl AppState {
                 .config
                 .roots
                 .first()
-                .and_then(|r| r.canonicalize().ok()),
+                .and_then(|r| dunce::canonicalize(r).ok()),
         }
     }
 }

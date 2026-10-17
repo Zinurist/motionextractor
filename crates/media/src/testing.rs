@@ -12,7 +12,17 @@ pub fn ffmpeg() -> Ffmpeg {
 
 fn run(ff: &Ffmpeg, args: &[String]) {
     let out = command(&ff.ffmpeg)
-        .args(["-hide_banner", "-v", "error", "-y"])
+        // Single-threaded: tests generate fixtures in parallel.
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-y",
+            "-filter_threads",
+            "1",
+            "-threads",
+            "1",
+        ])
         .args(args)
         .output()
         .expect("run ffmpeg");

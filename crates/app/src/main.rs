@@ -12,12 +12,19 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
+/// GUI-subsystem programs start without a console: attach to the terminal's console so CLI output
+/// is visible, unless the output is already redirected (pipes, files).
 #[cfg(all(windows, feature = "desktop"))]
 fn attach_console() {
-    use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
-    // SAFETY: plain Win32 call without pointers; failure (no parent console) is harmless.
+    use windows_sys::Win32::System::Console::{
+        ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE,
+    };
+    // SAFETY: plain Win32 calls without pointer arguments; failures are harmless.
     unsafe {
-        AttachConsole(ATTACH_PARENT_PROCESS);
+        let out = GetStdHandle(STD_OUTPUT_HANDLE);
+        if out.is_null() || out == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        }
     }
 }
 

@@ -137,7 +137,7 @@ class AppStore {
         this.cache = e.cache;
         break;
       case 'render':
-        this.job = e.job;
+        this.setJob(e.job);
         break;
       case 'settings':
         this.settings = e.settings;
@@ -285,6 +285,19 @@ class AppStore {
     }
   }
 
+  /**
+   * Updates the render job unless the update is older than what is shown: a fast render can finish
+   * (WebSocket event) before the response to the request that started it arrives.
+   */
+  setJob(job: JobStatus): void {
+    const current = this.job;
+    const stale =
+      current !== null &&
+      (job.id < current.id ||
+        (job.id === current.id && current.state !== 'running' && job.state === 'running'));
+    if (!stale) this.job = job;
+  }
+
   toast(kind: Toast['kind'], text: string): void {
     const id = ++this.toastId;
     this.toasts = [...this.toasts, { id, kind, text }];
@@ -316,4 +329,4 @@ declare global {
     mxDebug?: { store: AppStore };
   }
 }
-window.mxDebug = { store };
+if (typeof window !== 'undefined') window.mxDebug = { store };

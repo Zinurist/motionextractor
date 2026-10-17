@@ -4,7 +4,7 @@
 //! starts at a missing frame and streams forward until it reaches a cached frame, leaves the wanted
 //! window, or is preempted because the playhead moved elsewhere.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -16,6 +16,9 @@ use crate::cache::{FrameCache, Insert};
 const CLAIM_AHEAD: u64 = 48;
 /// Upper bound for one run (frames), so long videos are revisited in priority order.
 const MAX_RUN: u64 = 1800;
+/// Decoder failures at the same frame before it is given up.
+const MAX_ATTEMPTS: u32 = 3;
+const RETRY_DELAY: Duration = Duration::from_millis(250);
 
 /// The frames the prefetcher keeps cached around playhead `t`, as `[start, end)`.
 ///
@@ -69,6 +72,8 @@ struct State {
     runs: Vec<Option<Run>>,
     /// Frames that could not be decoded (e.g. past the real end of the video).
     failed: HashSet<u64>,
+    /// Decoder failures per frame, for retries.
+    errors: HashMap<u64, u32>,
     /// Incremented on every focus change.
     focus_version: u64,
     /// Set when the cache rejected a frame: nothing more fits until the focus changes.
@@ -133,6 +138,7 @@ impl Prefetcher {
                 r: None,
                 runs: vec![None; workers],
                 failed: HashSet::new(),
+                errors: HashMap::new(),
                 focus_version: 0,
                 stalled_at: None,
                 shutdown: false,
@@ -272,7 +278,7 @@ fn decode_run(sh: &Shared, me: usize, start: u64, len: u64) {
         Ok(d) => d,
         Err(e) => {
             tracing::warn!("cannot start decoder: {e}");
-            mark_failed(sh, start..start + len);
+            decode_error(sh, start, start + len);
             return;
         }
     };
@@ -289,7 +295,8 @@ fn decode_run(sh: &Shared, me: usize, start: u64, len: u64) {
             Ok(None) => break,
             Err(e) => {
                 tracing::warn!("decoding failed at frame {i}: {e}");
-                break;
+                decode_error(sh, i, start + len);
+                return;
             }
         };
         match sh.cache.insert(sh.generation, i, Arc::new(frame)) {
@@ -303,6 +310,7 @@ fn decode_run(sh: &Shared, me: usize, start: u64, len: u64) {
         }
         i += 1;
         let mut s = sh.lock();
+        s.errors.remove(&start);
         if let Some(run) = s.runs[me].as_mut() {
             run.next = i;
         }
@@ -319,6 +327,22 @@ fn decode_run(sh: &Shared, me: usize, start: u64, len: u64) {
 
 fn mark_failed(sh: &Shared, range: std::ops::Range<u64>) {
     sh.lock().failed.extend(range);
+}
+
+/// A decoder failed at frame `at` (e.g. ffmpeg could not start). Such errors may be transient, so
+/// the frames are retried after a pause and only given up after `MAX_ATTEMPTS` failures.
+fn decode_error(sh: &Shared, at: u64, end: u64) {
+    let give_up = {
+        let mut s = sh.lock();
+        let attempts = s.errors.entry(at).or_insert(0);
+        *attempts += 1;
+        *attempts >= MAX_ATTEMPTS
+    };
+    if give_up {
+        mark_failed(sh, at..end);
+    } else {
+        std::thread::sleep(RETRY_DELAY);
+    }
 }
 
 #[cfg(test)]

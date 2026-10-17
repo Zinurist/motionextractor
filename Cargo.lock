@@ -2115,6 +2115,7 @@ name = "mx-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dunce",
  "futures-util",
  "jpeg-encoder",
  "mime_guess",

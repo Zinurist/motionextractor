@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
+dunce = "1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 jpeg-encoder = "0.6"
 mime_guess = "2"

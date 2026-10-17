@@ -5,8 +5,8 @@
 > build/test commands or conventions must be reflected here in the same change.
 > Keep it free of anything specific to a particular developer machine — this is an open source project.
 
-Status: **M5 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
-server, web UI, E2E suite, desktop app). Sections describe
+Status: **M1–M6 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
+server, web UI, E2E suite, desktop app, CI/CD). Sections describe
 the target state; the [Roadmap](#9-roadmap) tracks what is implemented.
 
 ---
@@ -296,8 +296,10 @@ supports `serve`, `render` and `probe`.
 - Executables are found via `MOTION_EXTRACTOR_FFMPEG` / `MOTION_EXTRACTOR_FFPROBE`, then next to the
   running executable (bundled), then `PATH`.
 - **Probe**: `ffprobe -show_streams -show_format` JSON. Frame rate = `avg_frame_rate`; frame count =
-  `nb_frames` when the stream is CFR, else `round(duration × fps)`; rotation metadata swaps the
-  size. Attached pictures (cover art) are not video streams.
+  `nb_frames` when the stream is CFR, else `round(duration × fps)` with the duration taken from the
+  stream, then its Matroska `DURATION` tag, then the container (which may include longer audio);
+  rotation metadata swaps the size. Attached pictures (cover art) are not video streams. Tested
+  with ffmpeg 6.0 and 8.1.
 - **Decode**: `ffmpeg [-hwaccel auto] [-ss <seek>] -i IN -copyts -an -sn -dn
   -vf "fps=<fps>[,trim=start=<abs>][,scale=W:H:flags=area]" [-frames:v N] -f rawvideo -pix_fmt rgb24 pipe:1`.
   Frame-accurate seeking to frame `s`:
@@ -379,6 +381,8 @@ parameters change (render options do not change it).
 - Parameter edits apply locally at once and are sent as JSON merge patches; while one request is
   in flight further edits are coalesced into the next. `preset` events from the server are adopted
   only if they differ from what this client last sent (other clients, preset loads).
+- Render job updates from the start request and from events are applied in order: an update older
+  than the shown state (same job id, terminal → running) is ignored.
 - Frames: the store requests the views the current mode needs (`output`, `original` or both) on
   every playhead/mode/revision change; responses older than the newest shown one are dropped.
   Playback advances the playhead by wall-clock time, so slow frames are skipped, not slowed.
@@ -423,8 +427,11 @@ effect at preview resolution).
   left to that worker.
 - On a focus change, runs outside the new window are preempted; if the needed frames are not being
   decoded and every worker is busy, the run furthest from the playhead is preempted.
-- Frames the decoder could not produce (e.g. the video is shorter than probed) are remembered and
-  skipped. After a rejected insert the workers stall until the focus changes.
+- Frames past a clean end of stream (the video is shorter than probed) are remembered and skipped.
+  Decoder errors (e.g. ffmpeg failed to start) are retried after 250 ms; a frame is given up after
+  three failed attempts. After a rejected insert the workers stall until the focus changes.
+- Preview decoders run ffmpeg with `-threads 1` for the raw output stage (decoding itself stays
+  multi-threaded) to keep the thread count per decoder low.
 
 ### 4.3 Processing (`engine::session`)
 
@@ -523,12 +530,28 @@ Planned (later milestones):
 
 ## 7. CI / CD (GitHub Actions)
 
-- **ci.yml** (push, PR): lint (rustfmt, clippy, eslint, svelte-check) → Rust tests on Linux,
-  Windows and macOS (with ffmpeg installed) → web unit tests → E2E on Linux (and Windows) → desktop smoke test.
-- **release.yml** (tag `v*`): build installers with `tauri-action` — Windows (`.msi`, NSIS `.exe`,
-  bundled ffmpeg), macOS (`.dmg`, universal binary, bundled ffmpeg), Linux (`.deb`, `.rpm`,
-  `.AppImage`); plus headless `serve`/`render` binaries;
-  attach to a GitHub Release. Flatpak packaging is a later addition.
+- **`.github/workflows/ci.yml`** (push to `main`, pull requests, manual):
+  - *Lint* (Ubuntu): rustfmt, clippy (`-D warnings`, with and without the `desktop` feature),
+    svelte-check, Prettier, ESLint, Vitest, E2E lint (Prettier + tsc).
+  - *Test* matrix — Ubuntu 24.04 (Chromium + WebKit), Windows (Chromium), macOS (Chromium + WebKit):
+    install ffmpeg (apt / choco / brew), build the web UI, `cargo test --workspace`, build the app,
+    desktop smoke test (`--smoke-test`, under `xvfb-run` on Linux), Playwright E2E. Reports and traces
+    are uploaded on failure.
+- **`.github/workflows/release.yml`** (tag `v*`, or manual for a dry run):
+  - Linux (Ubuntu 22.04 for glibc compatibility): `.deb` and `.rpm` (system ffmpeg) and an `.AppImage`
+    with bundled ffmpeg; Windows: `.msi` and NSIS `-setup.exe` with bundled ffmpeg; macOS: universal
+    `.dmg` with bundled (lipo'd) ffmpeg. Plus headless CLI archives
+    (`motion-extractor-cli-<version>-<target>`, built `--no-default-features`).
+  - `scripts/fetch-ffmpeg.sh <target> crates/app/binaries` downloads static GPL builds (BtbN for
+    Linux/Windows, martin-riedl.de for macOS with SHA-256 check) named `ffmpeg-<target>` for
+    `tauri.ffmpeg.conf.json`.
+  - Artifacts are attached to a **draft** GitHub release (published by hand). Builds are not
+    code-signed or notarised yet (macOS: right-click → Open; Windows: SmartScreen warning).
+- **`.github/dependabot.yml`**: monthly grouped updates for actions, cargo and npm.
+- Workflows are checked with `actionlint`.
+
+**Releasing:** bump `version` in the root `Cargo.toml` (and `web`/`e2e` `package.json`), commit,
+tag `vX.Y.Z`, push the tag, review and publish the draft release.
 
 ## 8. Conventions
 
@@ -549,7 +572,7 @@ Planned (later milestones):
 - [x] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs, file browser
 - [x] M4 — Playwright E2E suite covering §2 (36 tests, Chromium and WebKit)
 - [x] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke test, installers (.deb/.rpm verified)
-- [ ] M6 — GitHub Actions CI + release pipeline with installers
+- [x] M6 — GitHub Actions CI + release pipeline with installers (not yet run on GitHub)
 - [ ] Later — alpha output, Flatpak, presets library, faster bloom compositing
 
 ## 10. Licensing
@@ -560,3 +583,5 @@ builds (with x264/x265) in release packages.
 ## 11. Open questions
 
 - **Name** — "Motion Extractor" / `motion-extractor` is a working title.
+- **Repository URL** — not set in `Cargo.toml` yet (add `repository` once the GitHub repo exists).
+- **Code signing** for Windows/macOS releases.

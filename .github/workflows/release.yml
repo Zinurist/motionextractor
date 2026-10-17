@@ -1,0 +1,120 @@
+name: Release
+
+# Pushing a tag `v*` builds installers for every platform and attaches them to a draft release.
+# Running the workflow manually builds the same artifacts without publishing.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: universal-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET: ${{ matrix.target }}
+      # linuxdeploy (AppImage) runs without FUSE.
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install desktop build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libfuse2 file
+
+      - name: Build the web UI
+        run: |
+          npm ci --prefix web
+          npm --prefix web run build
+
+      - name: Download ffmpeg sidecars
+        shell: bash
+        run: scripts/fetch-ffmpeg.sh "$TARGET" crates/app/binaries
+
+      - name: Build installers
+        shell: bash
+        working-directory: crates/app
+        run: |
+          tauri=../../web/node_modules/.bin/tauri
+          if [ "$RUNNER_OS" = Linux ]; then
+            # Distribution packages use the system ffmpeg; the AppImage bundles its own.
+            $tauri build --target "$TARGET" --bundles deb,rpm
+            $tauri build --target "$TARGET" --bundles appimage --config tauri.ffmpeg.conf.json
+          else
+            $tauri build --target "$TARGET" --config tauri.ffmpeg.conf.json
+          fi
+
+      - name: Build the headless CLI
+        shell: bash
+        run: |
+          if [ "$TARGET" = universal-apple-darwin ]; then
+            for t in aarch64-apple-darwin x86_64-apple-darwin; do
+              cargo build --release --target $t -p motion-extractor --no-default-features
+            done
+            mkdir -p target/cli
+            lipo -create -output target/cli/motion-extractor \
+              target/aarch64-apple-darwin/release/motion-extractor target/x86_64-apple-darwin/release/motion-extractor
+          else
+            cargo build --release --target "$TARGET" -p motion-extractor --no-default-features
+            mkdir -p target/cli
+            cp target/"$TARGET"/release/motion-extractor* target/cli/
+            rm -f target/cli/*.d target/cli/*.pdb
+          fi
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          bundle=target/"$TARGET"/release/bundle
+          find "$bundle" -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+            -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.dmg' \) -exec cp {} dist/ \;
+          version=${GITHUB_REF_NAME#v}
+          cli=motion-extractor-cli-${version}-${TARGET}
+          if [ "$RUNNER_OS" = Windows ]; then
+            (cd target/cli && 7z a "../../dist/$cli.zip" motion-extractor.exe)
+          else
+            tar -czf "dist/$cli.tar.gz" -C target/cli motion-extractor
+          fi
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+
+      - name: Attach to the draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist/*

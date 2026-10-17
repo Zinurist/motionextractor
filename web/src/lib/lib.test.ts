@@ -80,3 +80,30 @@ describe('merge', () => {
     expect(deepMerge({ crf: 5 }, { crf: null })).toEqual({ crf: null });
   });
 });
+
+describe('render job updates', () => {
+  it('ignores updates older than the shown state', async () => {
+    const { store } = await import('./store.svelte');
+    const job = (id: number, state: 'running' | 'finished' | 'failed') => ({
+      id,
+      state,
+      done: 0,
+      total: 1,
+      fps: 0,
+      eta_seconds: null,
+      elapsed_seconds: 0,
+      output: 'o.mp4',
+      command: '',
+      error: null,
+    });
+    store.setJob(job(1, 'running'));
+    store.setJob(job(1, 'failed'));
+    // The late response to the start request must not resurrect the job.
+    store.setJob(job(1, 'running'));
+    expect(store.job?.state).toBe('failed');
+    store.setJob(job(2, 'running'));
+    expect(store.job?.id).toBe(2);
+    store.setJob(job(1, 'finished'));
+    expect(store.job?.id).toBe(2);
+  });
+});

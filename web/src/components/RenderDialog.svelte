@@ -88,7 +88,7 @@
   async function start(overwrite: boolean) {
     confirmOverwrite = false;
     try {
-      store.job = await api.startRender(output, overwrite);
+      store.setJob(await api.startRender(output, overwrite));
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.message.includes('exists')) {
         confirmOverwrite = true;

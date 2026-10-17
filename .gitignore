@@ -3,3 +3,4 @@ node_modules/
 /web/dist/
 /e2e/test-results/
 /e2e/playwright-report/
+/crates/app/binaries/

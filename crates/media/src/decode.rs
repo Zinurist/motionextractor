@@ -70,7 +70,14 @@ impl Ffmpeg {
         if let Some(n) = opts.frame_count {
             args.extend(["-frames:v".into(), n.to_string()]);
         }
-        args.extend(["-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"].map(String::from));
+        // The raw output needs no encoder threads (decoding itself stays multi-threaded); this saves
+        // one thread per core for every decoder process.
+        args.extend(
+            [
+                "-threads", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+            ]
+            .map(String::from),
+        );
         args
     }
 

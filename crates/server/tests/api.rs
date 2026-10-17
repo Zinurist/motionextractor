@@ -103,7 +103,10 @@ async fn info_and_session() {
 async fn open_errors_and_path_restrictions() {
     let s = start(None).await;
     let (status, _) = s
-        .post("/api/open", json!({ "path": "/etc/hostname" }))
+        .post(
+            "/api/open",
+            json!({ "path": std::env::temp_dir().join("outside.mp4") }),
+        )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, _) = s
@@ -188,7 +191,10 @@ async fn render_through_api() {
     let (status, _) = s.post("/api/render", json!({ "output": "out.mp4" })).await;
     assert_eq!(status, StatusCode::CONFLICT);
     let (status, _) = s
-        .post("/api/render", json!({ "output": "/tmp/elsewhere.mp4" }))
+        .post(
+            "/api/render",
+            json!({ "output": std::env::temp_dir().join("elsewhere.mp4") }),
+        )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (_, body) = s
