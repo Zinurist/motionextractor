@@ -39,19 +39,27 @@ riedl() {
   cp "$tmp/$arch/$tool" "$dest"
 }
 
+btbn_linux() {
+  local url
+  url=$(btbn "$1" 'tar\.xz')
+  curl -fsSL -o "$tmp/ff.tar.xz" "$url"
+  tar -xJf "$tmp/ff.tar.xz" -C "$tmp"
+  for tool in ffmpeg ffprobe; do cp "$tmp"/ffmpeg-*/bin/$tool "$out/$tool-$target"; done
+}
+
+btbn_windows() {
+  local url
+  url=$(btbn "$1" zip)
+  curl -fsSL -o "$tmp/ff.zip" "$url"
+  unzip -q "$tmp/ff.zip" -d "$tmp"
+  for tool in ffmpeg ffprobe; do cp "$tmp"/ffmpeg-*/bin/$tool.exe "$out/$tool-$target.exe"; done
+}
+
 case "$target" in
-  x86_64-unknown-linux-gnu)
-    url=$(btbn linux64 'tar\.xz')
-    curl -fsSL -o "$tmp/ff.tar.xz" "$url"
-    tar -xJf "$tmp/ff.tar.xz" -C "$tmp"
-    for tool in ffmpeg ffprobe; do cp "$tmp"/ffmpeg-*/bin/$tool "$out/$tool-$target"; done
-    ;;
-  x86_64-pc-windows-msvc)
-    url=$(btbn win64 zip)
-    curl -fsSL -o "$tmp/ff.zip" "$url"
-    unzip -q "$tmp/ff.zip" -d "$tmp"
-    for tool in ffmpeg ffprobe; do cp "$tmp"/ffmpeg-*/bin/$tool.exe "$out/$tool-$target.exe"; done
-    ;;
+  x86_64-unknown-linux-gnu) btbn_linux linux64 ;;
+  aarch64-unknown-linux-gnu) btbn_linux linuxarm64 ;;
+  x86_64-pc-windows-msvc) btbn_windows win64 ;;
+  aarch64-pc-windows-msvc) btbn_windows winarm64 ;;
   aarch64-apple-darwin | x86_64-apple-darwin)
     arch=$([ "$target" = aarch64-apple-darwin ] && echo arm64 || echo amd64)
     for tool in ffmpeg ffprobe; do riedl "$arch" "$tool" "$out/$tool-$target"; done
