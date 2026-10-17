@@ -1,0 +1,470 @@
+# Motion Extractor — Design & Specification
+
+> **This file is the single source of truth for the design and specification of the project.**
+> It MUST be kept up to date: any change to features, architecture, APIs, settings, file layout,
+> build/test commands or conventions must be reflected here in the same change.
+> Keep it free of anything specific to a particular developer machine — this is an open source project.
+
+Status: **M1 done** (effect pipeline, ffmpeg integration, `render`/`probe` CLI). Sections describe
+the target state; the [Roadmap](#9-roadmap) tracks what is implemented.
+
+---
+
+## 1. Purpose
+
+A cross-platform desktop application (Linux, Windows and macOS) that performs **motion extraction** on
+videos, as popularised by Posy's video [Motion Extraction](https://youtu.be/NSS6yAMZF78)
+(tutorial for video editors: [Motion Extraction tutorial](https://youtu.be/woj4vfMLpao)).
+
+For every frame `t` of a video, the app computes the difference against another frame (by default
+the frame `k` frames earlier). Static parts of the image cancel out to black; only the parts that
+changed remain bright. The result can be tinted, bloomed, overlaid on the original video, previewed
+interactively with fast scrubbing, and rendered to a video file via ffmpeg.
+
+### Goals
+
+1. Interactive preview: scrubbing and parameter changes must feel instant.
+2. Preview and final render produce the same image (up to resolution).
+3. Sensible defaults everywhere; power-user knobs (ffmpeg options) available but optional.
+4. Fully tested: unit, integration and end-to-end tests run in CI on every push.
+5. Same UI in desktop mode and in a headless server mode.
+
+### Non-goals (for now)
+
+- Video editing (cutting, multiple clips, timelines with tracks).
+- Real-time camera input.
+
+---
+
+## 2. Features (functional specification)
+
+### 2.1 Input
+
+- Open any video ffmpeg can decode. Opening via: native file dialog (desktop), drag & drop onto the
+  window (desktop), server-side file browser (server mode), path given on the command line.
+- The video is probed with `ffprobe`: resolution, frame rate, frame count, duration, audio presence.
+- Frames are addressed by **index** `0..N-1`. The video is treated as constant frame rate (CFR) at
+  its probed average frame rate; variable-frame-rate input is normalised to CFR on decode
+  (ffmpeg `fps` filter), so frame index ↔ time is always `time = index / fps`.
+- One video is open per session.
+
+### 2.2 Comparison modes
+
+| Mode | Reference frame for frame `t` | Meaning |
+|---|---|---|
+| **Rolling offset** (default) | `t − k` | Motion: what moved during the last `k` frames |
+| **Fixed reference** | a user-chosen frame `r` | Change: what differs from frame `r` |
+
+- **Offset `k`** can be entered **in frames or in seconds** (unit toggle). Seconds are converted with
+  `k = round(seconds × fps)`; the UI always shows both representations. `k` is a non-zero integer;
+  negative values compare against a *future* frame. Default: `k = 1` frame.
+- If the reference index is outside `0..N-1` (e.g. the first `k` frames), the frame has
+  **no reference** and the motion mask is zero (output = background only).
+- **Fixed reference frame** can be set from the current playhead ("Set reference to current frame")
+  or by entering a frame index / timestamp. The reference frame is shown as a marker on the timeline.
+
+### 2.3 Effect pipeline
+
+All effect parameters are **resolution independent** (spatial sizes are fractions of frame height) so
+a low-resolution preview matches the full-resolution render. The pipeline is a pure function
+`process(current, reference, params) -> output` implemented once in the `core` crate and used by
+both preview and render.
+
+Per pixel (values normalised to `0..1`, sRGB-encoded):
+
+1. **Pre-blur (denoise)**, optional: Gaussian blur of both inputs with radius `denoise` (fraction of
+   height, default `0` = off). Suppresses sensor and compression noise. Only the differencing uses
+   the blurred frames; the overlay background stays sharp. Because it depends only on the frame,
+   callers prepare each frame once (`core::Prepared`) and reuse it as current and as reference.
+2. **Difference** `D = |C − R|` per channel.
+3. **Motion mask** `m = metric(D)` where `metric` is `luma` (Rec. 709 weights, default) or `max`
+   (max of channels).
+4. **Threshold & gain** `m' = clamp((m − threshold) × gain, 0, 1)`; optional `gamma` applied as
+   `m'^(1/gamma)`. Defaults: `threshold = 0.02`, `gain = 4.0`, `gamma = 1.0`.
+5. **Colorise** motion layer `L = m' × color`. `color` is chosen with a color picker, default white.
+6. **Bloom**, optional (default off): extract `L` above `bloom_threshold`, blur with radius
+   `bloom_radius` (multi-scale downsample/blur/upsample), add `bloom_intensity ×` blurred result.
+   Bloom is computed in linear light and converted back to sRGB.
+7. **Composite** over the background:
+   - Background **black** (default): `out = L + bloom`.
+   - Background **original video** (overlay mode): `bg = C × background_brightness` (default `1.0`,
+     lower values dim the original so the motion pops), then
+     `out = lerp(bg, color, m' × overlay_opacity) + bloom`. Black parts of the motion layer are
+     therefore transparent — only motion is drawn on top of the original.
+   - Output is clamped to `0..1`.
+
+Optional, lower priority:
+
+- **Classic mode** (the original editor technique from the video): `out = 0.5·C + 0.5·(1 − R)`,
+  producing a grey image with motion as deviations. Bypasses steps 2–7 (uses the denoised frames).
+  Implemented in `core` and the CLI (`--classic`).
+- **Alpha output**: render the motion layer with `m'` (+bloom) as alpha channel for compositing in
+  other tools (requires an alpha-capable codec: ProRes 4444, VP9/WebM, PNG sequence).
+
+### 2.4 Preview & scrubbing
+
+- A viewer shows the processed frame at the playhead. Timeline with scrubbing, play/pause, frame
+  step (±1), jump to start/end, keyboard shortcuts (Space, ←/→, Shift+←/→ = ±1 s, Home/End).
+- **Every parameter change updates the viewer immediately** (no "apply" button).
+- View modes: *Output*, *Original*, *Split* (draggable divider), *Side by side*.
+- Zoom (fit / 100% / mouse-wheel) and pan.
+- **Preview resolution** setting (e.g. 360p / 540p / 720p / 1080p / native, default 540p).
+- The timeline visualises which frames are currently cached (like video editors do).
+- Playback at the video's frame rate; frames are dropped (not slowed) if the pipeline can't keep up.
+
+See [§4 Preview engine](#4-preview-engine) for how this is made fast.
+
+### 2.5 Rendering (export)
+
+- Renders the processed video at full (or chosen) resolution through ffmpeg.
+- **Presets** with reasonable defaults:
+  - *H.264 MP4* (default): `libx264`, `-crf 18`, `-preset medium`, `yuv420p`, `+faststart`
+  - *H.265 MP4*: `libx265`, `-crf 20`
+  - *VP9 WebM*, *ProRes MOV* (incl. 4444 for alpha), *FFV1 MKV* (lossless), *PNG sequence*
+- Editable options: codec, quality (CRF/bitrate), encoder preset, pixel format, output scale, time
+  range (in/out points), audio (*encode* — default: original audio re-encoded to AAC, Opus for
+  WebM, trimmed to the range; *copy* — stream copy; *none*), and a free-form **extra ffmpeg
+  arguments** field for power users.
+- Without an explicit codec, the codec follows the output extension (`.webm` → VP9, `.mov` →
+  ProRes, `.png`/`%` pattern → PNG sequence, anything else → H.264).
+- PNG sequences: the output is a directory (frames named `frame_%06d.png`) or a `%` pattern.
+- The UI shows the exact ffmpeg command that will be run.
+- Rendering runs in the background with progress (frames, fps, ETA) and can be cancelled. The
+  preview stays usable while rendering.
+- Output path selection via native save dialog (desktop) or path field (server mode). Existing files
+  are not overwritten without confirmation.
+
+### 2.6 Settings (persisted)
+
+Stored as JSON in the OS-standard per-user config directory.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `cache.max_memory` | 2 GiB | Upper bound for the preview frame cache. UI shows how many frames / seconds fit at the current preview resolution. |
+| `preview.resolution` | 540p | Height of cached preview frames (aspect preserved). |
+| `preview.prefetch_seconds` | 10 | Forward window prefetched around the playhead when the whole video does not fit. |
+| `decode.hwaccel` | `none` | Optional `-hwaccel auto`. |
+| `decode.workers` | 2 | Parallel ffmpeg decoder processes for cache filling. |
+| `ffmpeg.path` / `ffprobe.path` | auto | Auto = bundled binary next to the app, then `PATH`. |
+| `render.last_preset` | H.264 MP4 | |
+
+Effect parameters + render options of a session can be saved/loaded as a **preset file** (JSON).
+
+### 2.7 Command line
+
+Single binary `motion-extractor`:
+
+```
+motion-extractor [FILE]                     # start desktop GUI (default)
+motion-extractor serve [--bind ADDR] [--port N] [--root DIR]... [--token T] [FILE]
+motion-extractor render IN OUT [effect/render options | --preset FILE]
+motion-extractor probe FILE                 # video info as JSON
+```
+
+`render` makes every feature scriptable and is used heavily by integration tests. Options
+(`motion-extractor render --help` is authoritative):
+
+- Comparison: `--offset 3|3f|0.5s|-2` (rolling), `--reference 120|2.5s|1:02.5` (fixed).
+- Effect: `--metric luma|max`, `--threshold`, `--gain`, `--gamma`, `--denoise`, `--color #rrggbb`,
+  `--bloom` (+ `--bloom-radius`, `--bloom-intensity`, `--bloom-threshold`), `--overlay`
+  (+ `--background-brightness`, `--overlay-opacity`), `--classic`.
+- Output: `--codec h264|h265|vp9|prores|ffv1|png`, `--crf`, `--encoder-preset`, `--pix-fmt`,
+  `--height`, `--start`/`--end` (TIME, end exclusive), `--audio encode|copy|none`,
+  `--ffmpeg-arg=ARG` (repeatable).
+- `--preset FILE` loads settings (flags override it), `--save-preset FILE` writes the effective
+  settings, `--dry-run` prints the encoder command, `-y` overwrites, `-q` silences progress.
+- TIME values: frame index (`120`, `120f`), seconds (`2.5s`) or timestamp (`1:02.5`).
+
+**Preset file** (JSON, all sections optional, missing values use defaults):
+
+```json
+{
+  "version": 1,
+  "comparison": { "mode": "rolling", "offset": { "value": 0.5, "unit": "seconds" } },
+  "effect": { "blend": "difference", "metric": "luma", "denoise": 0.0, "threshold": 0.02,
+              "gain": 4.0, "gamma": 1.0, "color": "#ffffff",
+              "bloom": { "enabled": false, "threshold": 0.0, "radius": 0.02, "intensity": 1.0 },
+              "background": "black", "background_brightness": 1.0, "overlay_opacity": 1.0 },
+  "render": { "codec": "h264", "crf": null, "encoder_preset": null, "pix_fmt": null,
+              "audio": "encode", "extra_args": [], "start": null, "end": null, "height": null }
+}
+```
+
+Fixed comparison: `{ "mode": "fixed", "frame": 120 }`. The same JSON shapes are used by the HTTP API.
+
+---
+
+## 3. Architecture
+
+### 3.1 Decision: web UI served by a local Rust backend, wrapped in a native webview
+
+```
+┌─────────────────────── motion-extractor process ────────────────────────┐
+│                                                                          │
+│  Desktop shell (Tauri)            HTTP + WebSocket server (axum)         │
+│  ┌──────────────────────┐  load   ┌───────────────────────────────────┐  │
+│  │ native window +      │ ──────▶ │ static UI (embedded) · REST API · │  │
+│  │ system webview       │ 127.0.0.1│ WS: frames + events               │  │
+│  └──────────────────────┘         └──────────────┬────────────────────┘  │
+│                                                  │                       │
+│                         Engine: session, frame cache, prefetch, render   │
+│                                                  │                       │
+│                         core (effect)    media (ffmpeg/ffprobe procs)    │
+└──────────────────────────────────────────────────┼───────────────────────┘
+                                                   ▼
+                                          ffmpeg / ffprobe
+```
+
+- **Backend (Rust)** owns everything heavy: decoding, the frame cache, the effect, rendering.
+- **Frontend** is a web app (Svelte + TypeScript + Vite) that only displays processed frames and
+  edits parameters. It contains no image processing.
+- **Desktop mode**: the binary starts the server on `127.0.0.1` with a random port and a random
+  session token, then opens a Tauri window (system webview: WebKitGTK on Linux, WebView2 on Windows, WKWebView on macOS)
+  pointing at it. Native dialogs (`rfd`, XDG portal on Linux) and drag & drop are handled in the
+  backend process and pushed to the UI over the WebSocket.
+- **Server mode** (`serve`): same server, no window. Any browser can connect. Used for E2E tests and
+  for running on a remote/headless machine (the host keeps the cache and does the work).
+
+**Rationale.** One UI codebase for desktop and server mode; E2E tests drive the real UI with
+Playwright against server mode, exercising the exact code path of the desktop app. The concern that a
+web UI is too slow for preview is addressed by keeping all processing in the backend and shipping
+finished frames: on loopback, a raw 960×540 RGB frame (1.5 MB) transfers in well under a
+millisecond, so the viewer is limited by processing, not transport (see §4). Alternatives considered:
+a native immediate-mode GUI (egui) — fast, but E2E testing and a server mode would need a second UI;
+WebGL-side processing — fast, but duplicates the effect in a shader and risks preview/render
+mismatch.
+
+**Security.** The server binds to loopback by default. Every API/WS request must carry the session
+token (query param on first load → `HttpOnly` cookie; checked on all routes) and a matching `Host`
+header, preventing other local web pages / DNS rebinding from driving the app. In server mode the
+server-side file browser and all input/output paths are restricted to `--root` directories (default:
+the current working directory), and binding to a non-loopback address requires an explicit `--token` or prints a
+generated one.
+
+### 3.2 Repository layout
+
+```
+Cargo.toml                 workspace
+crates/
+  core/    (mx-core)       pure effect pipeline, frame types, params (no IO, no async)
+  media/   (mx-media)      ffprobe/ffmpeg subprocess wrappers: probe, decode stream, encode sink;
+                           feature `testing` = lavfi fixture generators shared by all tests
+  engine/  (mx-engine)     render jobs, presets; later session state, frame cache, prefetch
+  server/  (mx-server)     axum HTTP + WebSocket API, embeds built frontend (rust-embed)
+  app/     (motion-extractor)  the binary: CLI, desktop shell (Tauri, feature `desktop`, default
+                           on), `serve`, `render`, `probe`
+web/                       Svelte 5 + TypeScript + Vite frontend (built into crates/server)
+e2e/                       Playwright tests (+ fixture video generation)
+.github/workflows/         CI and release pipelines
+```
+
+Building `app` without the `desktop` feature yields a headless binary (no webview dependencies) that
+supports `serve`, `render` and `probe`.
+
+### 3.3 ffmpeg integration
+
+- ffmpeg/ffprobe are used as **external processes** (no libav linking): simple cross-platform
+  builds, no ABI issues, and users can swap in their own ffmpeg build.
+- Executables are found via `MOTION_EXTRACTOR_FFMPEG` / `MOTION_EXTRACTOR_FFPROBE`, then next to the
+  running executable (bundled), then `PATH`.
+- **Probe**: `ffprobe -show_streams -show_format` JSON. Frame rate = `avg_frame_rate`; frame count =
+  `nb_frames` when the stream is CFR, else `round(duration × fps)`; rotation metadata swaps the
+  size. Attached pictures (cover art) are not video streams.
+- **Decode**: `ffmpeg [-hwaccel auto] [-ss <seek>] -i IN -copyts -an -sn -dn
+  -vf "fps=<fps>[,trim=start=<abs>][,scale=W:H:flags=area]" [-frames:v N] -f rawvideo -pix_fmt rgb24 pipe:1`.
+  Frame-accurate seeking to frame `s`:
+  - target time `(s − 0.5) / fps` (half a frame early, so millisecond-rounded timestamps such as
+    Matroska's can never skip the frame);
+  - `-copyts` keeps absolute timestamps so the `fps` filter's output grid stays aligned with the
+    source frames (with reset timestamps it duplicates the first frame);
+  - `trim=start=<start_time + target>` makes the cut exact on those absolute timestamps;
+  - containers with a seek index (MP4/MOV, Matroska/WebM, AVI) seek directly to the target; others
+    (e.g. MPEG-TS, where ffmpeg may land after the target) seek 5 s earlier and let `trim` cut.
+- **Encode**: processed `rgb24` frames written to the stdin of
+  `ffmpeg -f rawvideo -pix_fmt rgb24 -s WxH -framerate FPS -i pipe:0 [-ss S -t D -i IN -map 0:v:0 -map 1:a:0?]
+  -vf "[crop to even,]scale=out_color_matrix=bt709:out_range=tv,format=PIXFMT" <codec args> [audio args] [extra args] OUT`.
+  YUV outputs are tagged BT.709; odd sizes are cropped by one pixel for chroma-subsampled formats.
+  The audio input is limited with `-t` (not `-shortest`, which drops trailing video frames).
+- stderr of every ffmpeg process is drained on a thread; its last lines become the error message.
+  Progress is counted on our side (frames written). Processes are killed when dropped and spawned
+  without a console window on Windows.
+- Distribution: release builds bundle a GPL ffmpeg build on Windows and macOS (Tauri sidecar); Linux
+  packages depend on the distribution's ffmpeg (the AppImage bundles one).
+
+### 3.4 HTTP / WebSocket API (v1)
+
+All JSON unless noted. Prefix `/api`.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /` | Frontend SPA |
+| `GET /api/info` | App version, mode (`desktop`/`server`), ffmpeg version/availability |
+| `GET/PUT /api/settings` | Persisted settings |
+| `POST /api/open` `{path}` | Open a video; returns probe info |
+| `POST /api/dialog/open`, `/api/dialog/save` | Native dialogs (desktop mode only) |
+| `GET /api/fs/list?path=` | Server-side file browser (server mode, within roots) |
+| `GET/PUT /api/params` | Current effect parameters (session state) |
+| `GET/PUT /api/preset` | Export/import params + render options as preset JSON |
+| `POST /api/render` `{output, options}` | Start render job → `{id}` |
+| `GET /api/render/{id}`, `DELETE /api/render/{id}` | Job status / cancel |
+| `GET /api/frame/{index}?view=output&scale=preview` | Single frame as PNG (debugging, tests) |
+| `WS /api/ws` | Frame requests/responses and server events |
+
+**WebSocket protocol.** Text messages are JSON, binary messages are frames.
+
+- Client → server: `{"type":"view","seq":n,"frame":i,"view":"output|original"}`.
+- Server → client binary frame: 32-byte little-endian header
+  `{magic u32, seq u32, frame u32, width u32, height u32, format u32 (0=RGB8 raw, 1=JPEG), reserved}`
+  followed by the payload.
+- **Latest wins**: the server keeps only the newest pending request per client; stale requests are
+  dropped. The client keeps at most 2 requests in flight (pipelining during playback).
+- Raw RGB on loopback connections; JPEG (quality configurable) for remote clients. Lossy encoding is
+  only ever applied *after* the effect, never to source frames (compression artifacts would show up
+  as false motion).
+- Server events: `cache` (cached frame ranges), `params` (changed by another client), `render`
+  (progress/finished/failed), `opened`, `error`.
+
+### 3.5 Frontend
+
+- Svelte 5 + TypeScript, Vite. No UI framework dependency beyond that; small hand-written
+  components.
+- Viewer draws frames with WebGL2 (`texSubImage2D` of RGB8 data, zoom/pan as a transform); falls
+  back to Canvas 2D.
+- All interactive elements carry stable `data-testid` attributes for E2E tests.
+- Layout: viewer (center), timeline (bottom), parameter panel (right: Mode, Difference, Color,
+  Bloom, Overlay), render dialog, settings dialog.
+
+---
+
+## 4. Preview engine
+
+The engine makes scrubbing instant by separating **slow** work (decoding) from **fast** work (the
+effect at preview resolution).
+
+### 4.1 Frame cache
+
+- Holds decoded **source** frames at preview resolution (`rgb24`), keyed by frame index, shared as
+  `Arc<Frame>`. Cost per frame = `w × h × 3` bytes (960×540 ≈ 1.5 MB → 2 GiB ≈ 1400 frames ≈ 47 s
+  at 30 fps).
+- Bounded by `cache.max_memory`. If the whole video fits, the cache fills completely in the
+  background and everything becomes random access.
+- Otherwise a **window around the playhead** is kept: `[t − k − back, t + prefetch]` (direction
+  aware: during reverse scrubbing the window extends backwards).
+- **Eviction** is distance-based (frames furthest from the playhead go first), not LRU. The fixed
+  reference frame and the frames needed for the current view (`t`, `t − k`) are pinned.
+- Changing preview resolution or opening another video clears the cache.
+
+### 4.2 Decoding / prefetch scheduler
+
+- Sequential decoding is fast, seeking is slow — so decoding happens in **runs**: a decoder worker
+  (one ffmpeg process) starts at a frame index and streams forward until cancelled or the run is
+  complete.
+- Priorities: (1) frames for the current view, (2) forward window in playback direction,
+  (3) backward window, (4) the rest of the video if the budget allows.
+- `decode.workers` processes run in parallel on different segments.
+- On a cache miss for the current view the viewer shows the nearest available frame (marked as
+  "loading") until the exact one arrives.
+
+### 4.3 Processing
+
+- Processed output frames are computed on demand from cached source frames (`core::process`,
+  parallelised with `rayon`). At preview resolution this takes a few milliseconds.
+- A small LRU of processed frames keyed by `(frame, params revision, view)` avoids recomputation
+  when stepping back and forth with unchanged parameters.
+
+### 4.4 Render path
+
+Rendering does not use the preview cache: it runs its own decoder thread(s) → `core::process_prepared`
+(rayon, main thread) → encoder thread pipeline with bounded channels (4 frames) between stages.
+
+- Rolling mode keeps the frames still needed (`|k| + 1`) in a ring buffer if that fits in 512 MiB;
+  otherwise a second decoder streams the reference frames in lockstep. Negative offsets read ahead.
+- Fixed mode decodes the reference frame once.
+- `--height` scales in the decoder, so processing runs at output size.
+- On error or cancellation the encoder is killed and the partial output file deleted.
+- Reference throughput (1080p, 16 threads, FFV1 output): ~100 fps plain, ~55 fps with bloom,
+  ~40 fps with denoise.
+
+---
+
+## 5. Testing
+
+**Rule: every user-facing feature in §2 has at least one E2E test. A feature is not done until its
+tests are.** Tests never rely on binary fixtures in the repo; test videos are generated with ffmpeg
+`lavfi` sources at test setup time (e.g. a white square moving at a known speed over black, encoded
+losslessly so pixel values are exact).
+
+| Level | Tooling | Scope |
+|---|---|---|
+| Unit (Rust) | `cargo test`, `proptest` | `core` effect math with synthetic frames (e.g. identical frames → black, known diff → known mask, resolution independence of blur/bloom), cache eviction policy, scheduler, ffmpeg argument building, WS header encoding |
+| Integration (Rust) | `cargo test` with real ffmpeg | probe, decode, frame-accurate seeking (MP4, MKV, MPEG-TS; 25/29.97/30 fps), every codec, render pipeline (`crates/engine/tests`): render fixture → decode output → assert motion pixels where the square moved and black elsewhere; ring vs. dual decoder equivalence; cancellation |
+| CLI (Rust) | `crates/app/tests/cli.rs` runs the built binary | every `render` option, presets, overwrite protection, error reporting |
+| Unit (web) | Vitest | stores, unit conversion (frames ↔ seconds), WS protocol parsing |
+| E2E | Playwright (Chromium + WebKit) against `motion-extractor serve` | open video, scrub, play, all params change the viewer, both comparison modes, color picker, bloom, overlay, view modes, settings persistence, render with defaults and custom options, cancel render, presets |
+| Desktop smoke | CI on Linux (Xvfb), Windows and macOS | binary launches the window, UI loads, then exits (`--smoke-test`) |
+
+E2E assertions on pixels use `GET /api/frame/{i}` and canvas readback.
+
+---
+
+## 6. Build, run, test
+
+Prerequisites: Rust (stable, ≥ 1.85), ffmpeg + ffprobe (with libx264, libx265, libvpx) on `PATH`;
+later Node.js (LTS) and, for the desktop build, the Tauri system prerequisites for the platform.
+
+```
+cargo build --release                                   # target/release/motion-extractor
+cargo run -p motion-extractor -- render IN OUT [opts]   # CLI
+cargo test --workspace                                  # Rust unit + integration tests
+cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+```
+
+Planned (later milestones):
+
+```
+npm --prefix web ci && npm --prefix web run build      # build frontend (embedded by crates/server)
+cargo run -p motion-extractor                           # desktop GUI
+cargo run -p motion-extractor --no-default-features -- serve --port 8080   # headless server
+npm --prefix web run dev                                # Vite dev server, proxies /api to :8080
+npm --prefix web test                                   # frontend unit tests
+npm --prefix e2e ci && npx --prefix e2e playwright test # E2E (starts the server itself)
+```
+
+## 7. CI / CD (GitHub Actions)
+
+- **ci.yml** (push, PR): lint (rustfmt, clippy, eslint, svelte-check) → Rust tests on Linux,
+  Windows and macOS (with ffmpeg installed) → web unit tests → E2E on Linux (and Windows) → desktop smoke test.
+- **release.yml** (tag `v*`): build installers with `tauri-action` — Windows (`.msi`, NSIS `.exe`,
+  bundled ffmpeg), macOS (`.dmg`, universal binary, bundled ffmpeg), Linux (`.deb`, `.rpm`,
+  `.AppImage`); plus headless `serve`/`render` binaries;
+  attach to a GitHub Release. Flatpak packaging is a later addition.
+
+## 8. Conventions
+
+- Rust edition 2024, `cargo fmt`, clippy clean with `-D warnings`. Errors: `thiserror` in libraries,
+  `anyhow` in the binary. Logging via `tracing`.
+- TypeScript strict mode, ESLint + Prettier.
+- `core` stays pure (no IO, no async, no global state) so it is trivially testable.
+- No platform-specific code outside `app` (desktop shell) and `media` (process spawning details).
+- Commit directly to `main`; CI must stay green.
+- Update this file together with any change to behaviour or structure.
+
+## 9. Roadmap
+
+- [x] M1 — `core` effect pipeline + `media` + `render`/`probe` CLI, with unit/integration tests
+  (incl. classic mode and presets)
+- [ ] M2 — `engine` (cache, prefetch, processing) + `server` API + WebSocket frames
+- [ ] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs
+- [ ] M4 — Playwright E2E suite covering §2 completely
+- [ ] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke tests
+- [ ] M6 — GitHub Actions CI + release pipeline with installers
+- [ ] Later — alpha output, Flatpak, presets library, faster bloom compositing
+
+## 10. Licensing
+
+The project is licensed under **GPL-3.0-or-later** (see `LICENSE`). This allows bundling GPL ffmpeg
+builds (with x264/x265) in release packages.
+
+## 11. Open questions
+
+- **Name** — "Motion Extractor" / `motion-extractor` is a working title.

@@ -1,0 +1,30 @@
+[package]
+name = "motion-extractor"
+description = "Motion extraction for videos: highlight what moves"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "motion-extractor"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+mx-core.workspace = true
+mx-engine.workspace = true
+mx-media.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+mx-media = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
+mx-core.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/media", "crates/engine", "crates/app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/OWNER/motion-extractor"
+rust-version = "1.85"
+
+[workspace.dependencies]
+mx-core = { path = "crates/core" }
+mx-media = { path = "crates/media" }
+mx-engine = { path = "crates/engine" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+proptest = "1"
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.test]
+opt-level = 2
