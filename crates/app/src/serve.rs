@@ -12,7 +12,8 @@ use mx_server::{Mode, ServerConfig, event_channel};
 
 #[derive(Debug, Args)]
 pub struct ServeArgs {
-    /// Address to listen on. Non-loopback addresses require a token (one is generated if needed).
+    /// Address to listen on. The server has no authentication: on a non-loopback address anyone who
+    /// can reach the port can use it (put it behind an authenticating reverse proxy if needed).
     #[arg(long, default_value = "127.0.0.1")]
     bind: IpAddr,
     /// Port (0 = any free port).
@@ -22,9 +23,6 @@ pub struct ServeArgs {
     /// current directory).
     #[arg(long = "root", value_name = "DIR")]
     roots: Vec<PathBuf>,
-    /// Access token required by the server.
-    #[arg(long)]
-    token: Option<String>,
     /// Settings file (default: the per-user config directory).
     #[arg(long, value_name = "FILE")]
     settings: Option<PathBuf>,
@@ -57,12 +55,6 @@ pub fn ffmpeg_for(settings_path: Option<&Path>) -> Ffmpeg {
     )
 }
 
-pub fn random_token() -> String {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).expect("system random number generator");
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 pub fn run(args: ServeArgs) -> Result<()> {
     let settings_path = args.settings.or_else(default_settings_path);
     let ff = ffmpeg_for(settings_path.as_deref());
@@ -78,33 +70,24 @@ pub fn run(args: ServeArgs) -> Result<()> {
     } else {
         args.roots
     };
-    let token = match args.token {
-        Some(t) => Some(t),
-        None if !args.bind.is_loopback() => Some(random_token()),
-        None => None,
-    };
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         let listener = tokio::net::TcpListener::bind(SocketAddr::new(args.bind, args.port))
             .await
             .with_context(|| format!("cannot listen on {}:{}", args.bind, args.port))?;
         let addr = listener.local_addr()?;
-        let query = token
-            .as_ref()
-            .map(|t| format!("?token={t}"))
-            .unwrap_or_default();
         let host = if addr.ip().is_unspecified() {
             "localhost".to_owned()
         } else {
             addr.ip().to_string()
         };
         println!(
-            "Motion Extractor listening on http://{host}:{}/{query}",
+            "Motion Extractor listening on http://{host}:{}/",
             addr.port()
         );
         let config = ServerConfig {
             mode: Mode::Server,
-            token,
+            token: None,
             roots,
             dialogs: None,
             on_connect: None,

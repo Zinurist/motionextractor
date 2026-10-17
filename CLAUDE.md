@@ -188,14 +188,15 @@ Single binary `motion-extractor`:
 
 ```
 motion-extractor [FILE]                     # start desktop GUI (default)
-motion-extractor serve [--bind ADDR] [--port N] [--root DIR]... [--token T] [--settings FILE] [FILE]
+motion-extractor serve [--bind ADDR] [--port N] [--root DIR]... [--settings FILE] [FILE]
 motion-extractor render IN OUT [effect/render options | --preset FILE]
 motion-extractor probe FILE                 # video info as JSON
 ```
 
 `serve` defaults: bind `127.0.0.1`, port 8090 (0 = any free port), root = current directory. It
-prints `Motion Extractor listening on http://HOST:PORT/[?token=T]` as its first stdout line (the E2E
-harness parses it).
+prints `Motion Extractor listening on http://HOST:PORT/` as its first stdout line (the E2E
+harness parses it). `serve` has no authentication; anyone who needs it puts an authenticating reverse
+proxy in front.
 
 `render` makes every feature scriptable and is used heavily by integration tests. Options
 (`motion-extractor render --help` is authoritative):
@@ -272,12 +273,13 @@ a native immediate-mode GUI (egui) — fast, but E2E testing and a server mode w
 WebGL-side processing — fast, but duplicates the effect in a shader and risks preview/render
 mismatch.
 
-**Security.** The server binds to loopback by default. Every API/WS request must carry the session
-token (query param on first load → `HttpOnly` cookie; checked on all routes) and a matching `Host`
-header, preventing other local web pages / DNS rebinding from driving the app. In server mode the
-server-side file browser and all input/output paths are restricted to `--root` directories (default:
-the current working directory), and binding to a non-loopback address requires an explicit `--token` or prints a
-generated one.
+**Security.** The server binds to loopback by default. On a loopback address every request must carry a
+matching `Host` header (and `Origin`, if present), preventing other web pages / DNS rebinding from
+driving the app. The desktop app additionally uses a random session token (query param on first
+load → `HttpOnly` cookie; checked on all routes). Server mode has **no authentication**: bound to a
+non-loopback address, anyone who can reach the port can use it (put an authenticating reverse proxy
+in front if needed). In server mode the server-side file browser and all input/output paths are
+restricted to `--root` directories (default: the current working directory).
 
 ### 3.2 Repository layout
 
@@ -579,6 +581,14 @@ mise run ci               # lint + test + e2e
 
 Task dependencies build the web UI (`web:build`, embedded by `crates/server`) and install npm
 dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browsers`) as needed.
+
+**Deploying to a server:** `scripts/quick-deploy.sh HOST` (manual use, not run by CI) cross-compiles
+the headless binary for a Linux host (architecture and glibc version detected over SSH; `cargo
+zigbuild`, with zig and cargo-zigbuild provided by mise), uploads it to
+`~/.local/bin/motion-extractor` and (re)starts a systemd **user** service running
+`serve --bind 0.0.0.0` (port `MX_PORT`, default 8090; root `MX_ROOT`, default `~/motion-extractor`).
+The unit is only created if missing; lingering is enabled so the service keeps running after
+logout. The host needs ffmpeg.
 
 ## 7. CI / CD (GitHub Actions)
 
