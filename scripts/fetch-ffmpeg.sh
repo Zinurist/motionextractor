@@ -65,10 +65,13 @@ case "$target" in
     for tool in ffmpeg ffprobe; do riedl "$arch" "$tool" "$out/$tool-$target"; done
     ;;
   universal-apple-darwin)
+    # Tauri builds each architecture separately (each needs its own sidecar), then bundles the
+    # universal binary with a universal sidecar.
     for tool in ffmpeg ffprobe; do
-      riedl arm64 "$tool" "$tmp/$tool-arm64"
-      riedl amd64 "$tool" "$tmp/$tool-amd64"
-      lipo -create -output "$out/$tool-$target" "$tmp/$tool-arm64" "$tmp/$tool-amd64"
+      riedl arm64 "$tool" "$out/$tool-aarch64-apple-darwin"
+      riedl amd64 "$tool" "$out/$tool-x86_64-apple-darwin"
+      lipo -create -output "$out/$tool-$target" \
+        "$out/$tool-aarch64-apple-darwin" "$out/$tool-x86_64-apple-darwin"
     done
     ;;
   *)
