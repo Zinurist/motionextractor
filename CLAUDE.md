@@ -106,7 +106,15 @@ Optional, lower priority:
 
 - A viewer shows the processed frame at the playhead. Timeline with scrubbing, play/pause, frame
   step (±1), jump to start/end, keyboard shortcuts (Space, ←/→, Shift+←/→ = ±1 s, Home/End).
-- **Every parameter change updates the viewer immediately** (no "apply" button).
+- **Every parameter change updates the viewer immediately** (no "apply" button). Sliders that
+  differ from their default show a reset button (circular arrow).
+- **Trim**: a window over the timeline whose edges can be dragged (the playhead follows the edge
+  being dragged to show the cut frame); outside it the timeline is dimmed. I / O set the in / out
+  point at the playhead; the ✕ next to the trim summary removes it. Playback starts at the trim
+  start (if the playhead is outside the trim or at its end) and stops at the trim end; Home/End and
+  the ⏮/⏭ buttons jump to the trim bounds. Scrubbing outside the trim stays possible. The trim *is*
+  the render range (`render.start`/`render.end`), so the render contains exactly the trimmed part;
+  opening another video clears it.
 - View modes: *Output*, *Original*, *Split* (draggable divider), *Side by side*.
 - Zoom (fit / 100% / mouse-wheel) and pan.
 - **Preview resolution** setting (e.g. 360p / 540p / 720p / 1080p / native, default 540p).
@@ -391,7 +399,12 @@ parameters change (render options do not change it).
   the frames) do not make it flicker.
 - Viewer uploads RGB8 frames as WebGL textures (`texImage2D`), JPEG frames via `createImageBitmap`;
   nearest-neighbour filtering from 200% zoom. 100% = one preview pixel per CSS pixel.
-- Keyboard: Space play/pause, ←/→ ±1 frame, Shift+←/→ ±1 s, Home/End (ignored while typing).
+- Keyboard: Space play/pause, ←/→ ±1 frame, Shift+←/→ ±1 s, Home/End (trim bounds), I/O (trim in/out
+  at the playhead) — ignored while typing.
+- Trim state lives in the store as `trim` (`[start, end)` from `preset.render`, whole video when
+  unset) with `setTrim`, `goStart`, `goEnd`; a trim covering the whole video is stored as `null`s.
+- Slider reset buttons compare against `defaultPreset()` in `types.ts`, which must match the backend
+  defaults (an E2E test checks that a fresh session shows no reset button).
 - Testability: every control has a stable `data-testid`; the viewer exposes `data-frame`,
   `data-exact`, `data-rev`, `data-mode`; `window.mxDebug.store.sample(view, x, y)` returns the RGB
   value of the last received raw frame.
@@ -492,8 +505,9 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 | Open via file browser, navigation, non-video errors, connection state | `open.spec.ts` |
 | Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill, no loading-badge flicker during playback | `playback.spec.ts` |
 | Rolling offset (frames/seconds, unit switch, negative, zero rejected), fixed reference | `comparison.spec.ts` |
-| Threshold/gain/gamma, color picker, bloom, overlay (brightness, opacity), classic mode, metric, denoise | `effect.spec.ts` |
+| Threshold/gain/gamma, color picker, bloom, overlay (brightness, opacity), classic mode, metric, denoise, slider reset buttons | `effect.spec.ts` |
 | Original/split/side-by-side views, split handle, zoom/pan/fit | `views.spec.ts` |
+| Trim: dragging the edges, playback/jumps within the trim, I/O keys, reset, render of the trimmed part, cleared on open | `trim.spec.ts` |
 | Render dialog: defaults, command preview, codecs, CRF, speed, pixel format, extra args, audio, range, resolution, PNG sequence, output browser, overwrite confirmation, cancel, errors, progress chip | `render.spec.ts` |
 | Settings: memory estimate, persistence, preview resolution, validation | `settings.spec.ts` |
 | Preset save/load, invalid presets | `presets.spec.ts` |
@@ -574,10 +588,11 @@ tag `vX.Y.Z`, push the tag, review and publish the draft release.
 - [x] M2 — `engine` (cache, prefetch, processing, settings, render jobs) + `server` API + WebSocket
   frames + `serve` command
 - [x] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs, file browser
-- [x] M4 — Playwright E2E suite covering §2 (36 tests, Chromium and WebKit)
+- [x] M4 — Playwright E2E suite covering §2 (Chromium and WebKit)
 - [x] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke test, installers (.deb/.rpm verified)
 - [x] M6 — GitHub Actions CI + release pipeline with installers, rolling nightly builds, mise tasks
   (workflows not yet run on GitHub)
+- [x] Trim on the timeline, slider reset buttons
 - [ ] Later — alpha output, Flatpak, presets library, faster bloom compositing
 
 ## 10. Licensing

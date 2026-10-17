@@ -5,6 +5,8 @@
 
   let track: HTMLDivElement;
   let scrubbing = false;
+  /** Which trim edge is being dragged. */
+  let dragging = $state<'start' | 'end' | null>(null);
 
   const count = $derived(store.frameCount);
   // Frame i occupies [i, i + 1) of the track; the playhead sits at the frame's centre.
@@ -13,15 +15,17 @@
   const refFrame = $derived(
     store.preset.comparison.mode === 'fixed' ? store.preset.comparison.frame : null,
   );
-  const range = $derived({
-    start: store.preset.render.start ?? 0,
-    end: store.preset.render.end ?? count,
-  });
-  const hasRange = $derived(store.preset.render.start !== null || store.preset.render.end !== null);
+  const trim = $derived(store.trim);
 
   function frameAt(clientX: number): number {
     const r = track.getBoundingClientRect();
     return Math.floor(((clientX - r.left) / r.width) * count);
+  }
+
+  /** The frame boundary (0..count) closest to a pointer position. */
+  function boundaryAt(clientX: number): number {
+    const r = track.getBoundingClientRect();
+    return Math.round(((clientX - r.left) / r.width) * count);
   }
 
   function down(e: PointerEvent) {
@@ -41,6 +45,39 @@
     if (track.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
   }
 
+  function grabEdge(e: PointerEvent, edge: 'start' | 'end') {
+    if (!store.video || e.button !== 0) return;
+    // Dragging an edge must not scrub the track underneath.
+    e.stopPropagation();
+    store.pause();
+    dragging = edge;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function moveEdge(e: PointerEvent) {
+    if (!dragging) return;
+    e.stopPropagation();
+    const b = boundaryAt(e.clientX);
+    if (dragging === 'start') {
+      const start = Math.min(Math.max(0, b), trim.end - 1);
+      store.setTrim(start, trim.end);
+      // Show the frame the trimmed video starts with.
+      store.setFrame(start);
+    } else {
+      const end = Math.max(Math.min(count, b), trim.start + 1);
+      store.setTrim(trim.start, end);
+      store.setFrame(end - 1);
+    }
+  }
+
+  function releaseEdge(e: PointerEvent) {
+    if (!dragging) return;
+    e.stopPropagation();
+    dragging = null;
+    const el = e.currentTarget as HTMLElement;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  }
+
   function jumpTo(raw: string) {
     const v = Number(raw);
     if (Number.isFinite(v)) {
@@ -54,9 +91,9 @@
   <div class="controls">
     <button
       class="icon"
-      title="Start (Home)"
+      title="Start of the trimmed video (Home)"
       data-testid="go-start"
-      onclick={() => store.step(-count)}><Icon name="start" /></button
+      onclick={() => store.goStart()}><Icon name="start" /></button
     >
     <button
       class="icon"
@@ -77,8 +114,11 @@
       data-testid="step-forward"
       onclick={() => store.step(1)}><Icon name="next" /></button
     >
-    <button class="icon" title="End (End)" data-testid="go-end" onclick={() => store.step(count)}
-      ><Icon name="end" /></button
+    <button
+      class="icon"
+      title="End of the trimmed video (End)"
+      data-testid="go-end"
+      onclick={() => store.goEnd()}><Icon name="end" /></button
     >
     <span class="time mono" data-testid="time">
       {formatTime(store.frame / store.fps)} / {formatTime(count / store.fps)}
@@ -95,6 +135,23 @@
       />
       <span>/ {Math.max(0, count - 1)}</span>
     </label>
+    {#if store.trimmed}
+      <span
+        class="trim-info"
+        data-testid="trim-info"
+        title="Only this part is played and rendered (I / O set the in and out points)"
+      >
+        Trim {formatTime(trim.start / store.fps)} – {formatTime(trim.end / store.fps)}
+        <span class="muted">({trim.end - trim.start} frames)</span>
+        <button
+          class="icon reset"
+          aria-label="Remove trim"
+          title="Remove trim"
+          data-testid="trim-reset"
+          onclick={() => store.setTrim(0, count)}>✕</button
+        >
+      </span>
+    {/if}
     <span class="spacer"></span>
     <span class="muted cache-info" data-testid="cache-info" data-cached={store.cache.cached}>
       {store.cache.decoding ? 'Decoding… ' : ''}{store.cache.cached} / {count} frames cached
@@ -114,13 +171,6 @@
     onpointermove={move}
     onpointerup={up}
   >
-    {#if hasRange}
-      <div
-        class="range"
-        style:left="{pct(range.start)}%"
-        style:width="{pct(range.end) - pct(range.start)}%"
-      ></div>
-    {/if}
     {#each store.cache.ranges as [s, e] (s)}
       <div
         class="cached"
@@ -128,6 +178,47 @@
         style:width="{Math.max(0.2, pct(e) - pct(s))}%"
       ></div>
     {/each}
+    {#if count}
+      <!-- Everything outside the trim window is dimmed. -->
+      <div class="outside" style:left="0" style:width="{pct(trim.start)}%"></div>
+      <div class="outside" style:left="{pct(trim.end)}%" style:right="0"></div>
+      <div
+        class="trim"
+        class:trimmed={store.trimmed}
+        data-testid="trim-window"
+        data-start={trim.start}
+        data-end={trim.end}
+        style:left="{pct(trim.start)}%"
+        style:width="{pct(trim.end) - pct(trim.start)}%"
+      >
+        <div
+          class="edge start"
+          class:active={dragging === 'start'}
+          role="slider"
+          tabindex="-1"
+          aria-label="Trim start"
+          aria-valuenow={trim.start}
+          title="Drag to trim the start"
+          data-testid="trim-start"
+          onpointerdown={(e) => grabEdge(e, 'start')}
+          onpointermove={moveEdge}
+          onpointerup={releaseEdge}
+        ></div>
+        <div
+          class="edge end"
+          class:active={dragging === 'end'}
+          role="slider"
+          tabindex="-1"
+          aria-label="Trim end"
+          aria-valuenow={trim.end}
+          title="Drag to trim the end"
+          data-testid="trim-end"
+          onpointerdown={(e) => grabEdge(e, 'end')}
+          onpointermove={moveEdge}
+          onpointerup={releaseEdge}
+        ></div>
+      </div>
+    {/if}
     {#if refFrame !== null && count}
       <div
         class="ref"
@@ -176,6 +267,22 @@
     margin-left: 8px;
   }
 
+  .trim-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    color: var(--trim);
+  }
+
+  .trim-info .reset {
+    min-width: 0;
+    padding: 0 6px;
+    border: none;
+    background: none;
+    color: var(--muted);
+  }
+
   .spacer {
     flex: 1;
   }
@@ -183,6 +290,7 @@
   .track {
     position: relative;
     height: 26px;
+    margin: 0 6px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -197,11 +305,51 @@
     background: var(--cached);
   }
 
-  .range {
+  .outside {
     position: absolute;
     top: 0;
     bottom: 0;
-    background: rgb(79 157 255 / 14%);
+    background: rgb(0 0 0 / 55%);
+    pointer-events: none;
+  }
+
+  .trim {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    border: 2px solid transparent;
+    border-radius: var(--radius);
+    pointer-events: none;
+  }
+
+  .trim.trimmed {
+    border-color: var(--trim);
+  }
+
+  .edge {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 10px;
+    border-radius: 3px;
+    background: var(--trim);
+    opacity: 0.35;
+    cursor: ew-resize;
+    pointer-events: auto;
+  }
+
+  .trim.trimmed .edge,
+  .edge:hover,
+  .edge.active {
+    opacity: 1;
+  }
+
+  .edge.start {
+    left: -8px;
+  }
+
+  .edge.end {
+    right: -8px;
   }
 
   .ref {

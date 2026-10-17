@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Icon from './Icon.svelte';
+
   let {
     label,
     value,
@@ -8,6 +10,7 @@
     testid,
     disabled = false,
     format,
+    defaultValue,
     onChange,
   }: {
     label: string;
@@ -18,8 +21,12 @@
     testid: string;
     disabled?: boolean;
     format?: (v: number) => string;
+    /** When set, a reset button appears while the value differs from it. */
+    defaultValue?: number;
     onChange: (v: number) => void;
   } = $props();
+
+  const modified = $derived(defaultValue !== undefined && Math.abs(value - defaultValue) > 1e-9);
 
   function set(raw: string) {
     const v = Number(raw);
@@ -51,13 +58,25 @@
     data-testid={`${testid}-value`}
     onchange={(e) => set(e.currentTarget.value)}
   />
+  <span class="reset-slot">
+    {#if modified && defaultValue !== undefined}
+      <button
+        class="reset"
+        title="Reset to {defaultValue}"
+        aria-label="Reset {label}"
+        data-testid={`${testid}-reset`}
+        {disabled}
+        onclick={() => onChange(defaultValue)}><Icon name="reset" /></button
+      >
+    {/if}
+  </span>
   {#if format}<span class="muted unit">{format(value)}</span>{/if}
 </div>
 
 <style>
   .slider {
     display: grid;
-    grid-template-columns: 92px 1fr 64px;
+    grid-template-columns: 92px 1fr 64px 22px;
     align-items: center;
     gap: 6px;
     margin: 4px 0;
@@ -76,8 +95,26 @@
   }
 
   .unit {
-    grid-column: 2 / 4;
+    grid-column: 2 / 5;
     font-size: 11px;
     margin-top: -4px;
+  }
+
+  .reset-slot {
+    display: flex;
+    justify-content: center;
+  }
+
+  .reset {
+    display: flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    background: none;
+    color: var(--muted);
+  }
+
+  .reset:hover:not(:disabled) {
+    color: var(--text);
   }
 </style>

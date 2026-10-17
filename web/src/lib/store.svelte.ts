@@ -186,17 +186,54 @@ class AppStore {
     this.setFrame(this.frame + delta);
   }
 
+  /** The trimmed part of the video as frames `[start, end)` (the whole video when not trimmed). */
+  get trim(): { start: number; end: number } {
+    const count = this.frameCount;
+    const end = clamp(this.preset.render.end ?? count, 1, Math.max(1, count));
+    const start = clamp(this.preset.render.start ?? 0, 0, end - 1);
+    return { start, end };
+  }
+
+  get trimmed(): boolean {
+    const { start, end } = this.trim;
+    return start > 0 || end < this.frameCount;
+  }
+
+  /** Sets the trim range (frames `[start, end)`); the full video is stored as "no trim". */
+  setTrim(start: number, end: number): void {
+    const count = this.frameCount;
+    if (!count) return;
+    const e = clamp(Math.round(end), 1, count);
+    const s = clamp(Math.round(start), 0, e - 1);
+    this.updatePreset({ render: { start: s > 0 ? s : null, end: e < count ? e : null } });
+  }
+
+  /** Jumps to the first frame of the trimmed part. */
+  goStart(): void {
+    this.pause();
+    this.setFrame(this.trim.start);
+  }
+
+  /** Jumps to the last frame of the trimmed part. */
+  goEnd(): void {
+    this.pause();
+    this.setFrame(this.trim.end - 1);
+  }
+
+  /** Plays the trimmed part from the playhead (or from its start) and stops at its end. */
   play(): void {
     if (!this.video || this.playing) return;
-    if (this.frame >= this.frameCount - 1) this.setFrame(0);
+    const { start, end } = this.trim;
+    if (this.frame < start || this.frame >= end - 1) this.setFrame(start);
     this.playing = true;
     this.playStart = { time: performance.now(), frame: this.frame };
     const tick = () => {
       if (!this.playing) return;
+      const last = this.trim.end - 1;
       const elapsed = (performance.now() - this.playStart.time) / 1000;
       const target = this.playStart.frame + Math.floor(elapsed * this.fps);
-      if (target >= this.frameCount - 1) {
-        this.setFrame(this.frameCount - 1);
+      if (target >= last) {
+        this.setFrame(last);
         this.playing = false;
         return;
       }

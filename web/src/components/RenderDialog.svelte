@@ -180,7 +180,7 @@
       {/each}
     </select>
 
-    <label for="start">Range</label>
+    <label for="start">Trim</label>
     <div class="line">
       <input
         id="start"

@@ -293,3 +293,25 @@ fn prefetcher_keeps_window_around_playhead() {
         cache.ranges()
     );
 }
+
+#[test]
+fn opening_a_video_clears_the_trim() {
+    let f = fixture(MovingSquare::default());
+    let mut preset = Preset::default();
+    preset.render.start = Some(5);
+    preset.render.end = Some(20);
+    preset.effect.gain = 2.0;
+    f.session.set_preset(preset).unwrap();
+    let path = f.session.video().unwrap().info.path;
+    f.events.lock().unwrap().clear();
+    f.session.open(&path).unwrap();
+    let (preset, _) = f.session.preset();
+    assert_eq!((preset.render.start, preset.render.end), (None, None));
+    assert_eq!(preset.effect.gain, 2.0, "effect settings are kept");
+    let events = f.events.lock().unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::Preset { preset, .. } if preset.render.start.is_none()))
+    );
+}

@@ -107,11 +107,24 @@
         store.step(e.shiftKey ? second : 1);
         break;
       case 'Home':
-        store.step(-store.frameCount);
+        store.goStart();
         break;
       case 'End':
-        store.step(store.frameCount);
+        store.goEnd();
         break;
+      case 'i':
+      case 'I': {
+        // Trim in at the playhead (keeping the out point if it is still after it).
+        const { end } = store.trim;
+        store.setTrim(store.frame, store.frame < end ? end : store.frameCount);
+        break;
+      }
+      case 'o':
+      case 'O': {
+        const { start } = store.trim;
+        store.setTrim(store.frame >= start ? start : 0, store.frame + 1);
+        break;
+      }
       default:
         return;
     }

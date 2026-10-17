@@ -2,8 +2,10 @@
   // Inline icons, so they do not depend on the fonts installed on the system.
   let {
     name,
-  }: { name: 'start' | 'prev' | 'play' | 'pause' | 'next' | 'end' | 'folder' | 'film' | 'file' } =
-    $props();
+  }: {
+    name:
+      'start' | 'prev' | 'play' | 'pause' | 'next' | 'end' | 'folder' | 'film' | 'file' | 'reset';
+  } = $props();
 </script>
 
 <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
@@ -19,6 +21,15 @@
     <path d="M4 3v10l9-5z" />
   {:else if name === 'end'}
     <rect x="12" y="3" width="2" height="10" /><path d="M2 3v10l9-5z" />
+  {:else if name === 'reset'}
+    <path
+      d="M8 2.5a5.5 5.5 0 1 1-5.2 3.7"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    />
+    <path d="M1.6 2.2 6 3.4 3 6.8z" />
   {:else if name === 'folder'}
     <path d="M1.5 3.5h5l1.5 1.5h6.5v8h-13z" />
   {:else if name === 'film'}

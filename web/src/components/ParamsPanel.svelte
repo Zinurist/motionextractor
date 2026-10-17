@@ -1,9 +1,11 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
   import { offsetFrames } from '../lib/time';
-  import type { TimeUnit } from '../lib/types';
+  import { defaultPreset, type TimeUnit } from '../lib/types';
   import Slider from './Slider.svelte';
 
+  /** Defaults the reset buttons go back to. */
+  const D = defaultPreset().effect;
   const fx = $derived(store.preset.effect);
   const cmp = $derived(store.preset.comparison);
   const fps = $derived(store.fps);
@@ -155,6 +157,7 @@
     <Slider
       label="Threshold"
       testid="threshold"
+      defaultValue={D.threshold}
       min={0}
       max={0.5}
       step={0.005}
@@ -165,6 +168,7 @@
     <Slider
       label="Gain"
       testid="gain"
+      defaultValue={D.gain}
       min={0}
       max={20}
       step={0.1}
@@ -175,6 +179,7 @@
     <Slider
       label="Gamma"
       testid="gamma"
+      defaultValue={D.gamma}
       min={0.2}
       max={4}
       step={0.05}
@@ -185,6 +190,7 @@
     <Slider
       label="Denoise"
       testid="denoise"
+      defaultValue={D.denoise}
       min={0}
       max={0.02}
       step={0.0005}
@@ -227,6 +233,7 @@
     <Slider
       label="Radius"
       testid="bloom-radius"
+      defaultValue={D.bloom.radius}
       min={0}
       max={0.2}
       step={0.002}
@@ -238,6 +245,7 @@
     <Slider
       label="Intensity"
       testid="bloom-intensity"
+      defaultValue={D.bloom.intensity}
       min={0}
       max={5}
       step={0.05}
@@ -248,6 +256,7 @@
     <Slider
       label="Threshold"
       testid="bloom-threshold"
+      defaultValue={D.bloom.threshold}
       min={0}
       max={0.95}
       step={0.01}
@@ -286,6 +295,7 @@
     <Slider
       label="Brightness"
       testid="background-brightness"
+      defaultValue={D.background_brightness}
       min={0}
       max={1}
       step={0.01}
@@ -296,6 +306,7 @@
     <Slider
       label="Opacity"
       testid="overlay-opacity"
+      defaultValue={D.overlay_opacity}
       min={0}
       max={1}
       step={0.01}

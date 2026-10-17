@@ -266,12 +266,20 @@ impl Session {
             state: video.clone(),
             prefetch,
         });
+        // Trim points belong to the previous video.
+        let trimmed = state.preset.render.start.is_some() || state.preset.render.end.is_some();
+        state.preset.render.start = None;
+        state.preset.render.end = None;
+        let (preset, rev) = (state.preset.clone(), state.rev);
         // Start prefetching at the beginning.
         Self::focus(&state, &self.cache, 0, View::Output);
         drop(state);
         (self.events)(Event::Opened {
             video: video.clone(),
         });
+        if trimmed {
+            (self.events)(Event::Preset { preset, rev });
+        }
         self.emit_cache(true);
         Ok(video)
     }

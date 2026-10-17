@@ -115,3 +115,28 @@ test('metric and denoise are applied', async ({ app, server }) => {
   expect(preset.effect.metric).toBe('max');
   expect(preset.effect.denoise).toBe(0.01);
 });
+
+test('modified sliders can be reset to their defaults', async ({ app }) => {
+  await atFrame10(app);
+  // Fresh session: every slider is at its default (also proves UI and backend defaults agree).
+  await expect(app.getByTestId('params').locator('[data-testid$="-reset"]')).toHaveCount(0);
+
+  let rev = await currentRev(app);
+  await setNumber(app, 'gain-value', 0.5);
+  rev = await expectNewerRev(app, rev);
+  await expectPixel(app, EDGE, ROW, [125, 125, 125]);
+  await expect(app.getByTestId('gain-reset')).toBeVisible();
+  await expect(app.getByTestId('threshold-reset')).toBeHidden();
+
+  await app.getByTestId('gain-reset').click();
+  await expect(app.getByTestId('gain-value')).toHaveValue('4');
+  await expect(app.getByTestId('gain-reset')).toBeHidden();
+  await expectNewerRev(app, rev);
+  await expectPixel(app, EDGE, ROW, [255, 255, 255]);
+
+  // Nested values (bloom) reset too.
+  await app.getByTestId('bloom-enabled').check();
+  await setNumber(app, 'bloom-radius-value', 0.1);
+  await app.getByTestId('bloom-radius-reset').click();
+  await expect(app.getByTestId('bloom-radius-value')).toHaveValue('0.02');
+});
