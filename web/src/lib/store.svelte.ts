@@ -36,6 +36,18 @@ export interface Toast {
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
 const MUTED_KEY = 'mx-muted';
+const VOLUME_KEY = 'mx-volume';
+/** Maximum volume: 200 % (boost above the original level). */
+export const MAX_VOLUME = 2;
+
+function loadVolume(): number {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY) ?? '1');
+    return Number.isFinite(v) ? clamp(v, 0, MAX_VOLUME) : 1;
+  } catch {
+    return 1;
+  }
+}
 
 function loadMuted(): boolean {
   try {
@@ -59,6 +71,8 @@ class AppStore {
   /** Playing, but waiting for frames to be decoded (the clock and the audio are paused). */
   buffering = $state(false);
   muted = $state(loadMuted());
+  /** Playback volume, 0–2 (1 = original level; above 1 boosts through a gain node). */
+  volume = $state(loadVolume());
   viewMode = $state<ViewMode>('output');
   shown = $state<Record<View, Shown | null>>({ output: null, original: null });
   toasts = $state<Toast[]>([]);
@@ -76,6 +90,9 @@ class AppStore {
   private audio: HTMLAudioElement | null = null;
   private audioPath: string | null = null;
   private audioGeneration = 0;
+  /** Web Audio graph for volumes above 100 % (created on first play: browsers require a gesture). */
+  private audioContext: AudioContext | null = null;
+  private gain: GainNode | null = null;
   /** The audio could not be played (e.g. no decoder): fall back to the wall clock. */
   private audioFailed = false;
   /** Whether the running clock follows the audio (false after the audio has ended). */
@@ -139,6 +156,7 @@ class AppStore {
     if (path === this.audioPath && (this.audio || !path)) return;
     this.audio?.pause();
     this.audio = null;
+    this.gain = null;
     this.audioPath = path;
     this.audioFailed = false;
     if (!path || typeof Audio === 'undefined') return;
@@ -147,6 +165,7 @@ class AppStore {
     audio.preload = 'auto';
     audio.muted = this.muted;
     this.audio = audio;
+    this.applyVolume();
   }
 
   private handleEvent(e: ServerEvent): void {
@@ -326,6 +345,7 @@ class AppStore {
     this.followAudio = !!audio && !this.audioFailed && this.frame / this.fps < duration;
     if (!audio || !this.followAudio) return;
     audio.currentTime = this.frame / this.fps;
+    this.connectGain(audio);
     audio.play().catch(() => {
       // No playable audio: keep playing silently on the wall clock.
       this.audioFailed = true;
@@ -369,14 +389,64 @@ class AppStore {
     }
   }
 
+  /** Sets the volume (0–2) and remembers it. */
+  setVolume(v: number): void {
+    this.volume = clamp(Math.round(v * 100) / 100, 0, MAX_VOLUME);
+    this.applyVolume();
+    try {
+      localStorage.setItem(VOLUME_KEY, String(this.volume));
+    } catch {
+      // Storage may be unavailable; the volume still applies for this session.
+    }
+  }
+
+  /** Routes the audio element through a gain node, so the volume can go above 100 %. */
+  private connectGain(audio: HTMLAudioElement): void {
+    if (this.gain || typeof AudioContext === 'undefined') {
+      void this.audioContext?.resume();
+      return;
+    }
+    try {
+      const ctx = (this.audioContext ??= new AudioContext());
+      const gain = ctx.createGain();
+      ctx.createMediaElementSource(audio).connect(gain).connect(ctx.destination);
+      this.gain = gain;
+      void ctx.resume();
+    } catch {
+      // No Web Audio: the element's own volume (max. 100 %) is used.
+      this.gain = null;
+    }
+    this.applyVolume();
+  }
+
+  private applyVolume(): void {
+    const audio = this.audio;
+    if (!audio) return;
+    if (this.gain) {
+      audio.volume = 1;
+      this.gain.gain.value = this.volume;
+    } else {
+      audio.volume = Math.min(1, this.volume);
+    }
+  }
+
   get hasAudio(): boolean {
     return !!this.video?.info.has_audio;
   }
 
   /** State of the audio player, for E2E tests. */
-  debugAudio(): { src: string; paused: boolean; muted: boolean; time: number } | null {
+  debugAudio(): {
+    src: string;
+    paused: boolean;
+    muted: boolean;
+    time: number;
+    /** Effective level: gain node value, or the element volume without Web Audio. */
+    level: number;
+  } | null {
     const a = this.audio;
-    return a ? { src: a.src, paused: a.paused, muted: a.muted, time: a.currentTime } : null;
+    if (!a) return null;
+    const level = this.gain ? this.gain.gain.value : a.volume;
+    return { src: a.src, paused: a.paused, muted: a.muted, time: a.currentTime, level };
   }
 
   togglePlay(): void {

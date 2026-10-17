@@ -2,7 +2,13 @@ import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, makeSquareVideo, openVideo, test } from './fixtures';
 
-type AudioState = { src: string; paused: boolean; muted: boolean; time: number } | null;
+type AudioState = {
+  src: string;
+  paused: boolean;
+  muted: boolean;
+  time: number;
+  level: number;
+} | null;
 
 const audioState = (app: Page) =>
   app.evaluate(
@@ -43,4 +49,28 @@ test('videos without audio have no mute button', async ({ app, server }) => {
   await openVideo(app, server, silent, 20);
   await expect(app.getByTestId('mute')).toBeHidden();
   expect(await audioState(app)).toBeNull();
+});
+
+test('volume from 0 to 200 % (boost), remembered', async ({ app }) => {
+  const volume = app.getByTestId('volume');
+  await expect(app.getByTestId('volume-value')).toHaveText('100%');
+  await volume.fill('150');
+  await expect(app.getByTestId('volume-value')).toHaveText('150%');
+
+  // Above 100 % the audio runs through a gain node, set up on the first play.
+  await expect(app.getByTestId('cache-info')).toHaveAttribute('data-cached', '30');
+  await app.getByTestId('play').click();
+  await expect.poll(async () => (await audioState(app))!.level).toBe(1.5);
+  await expect(app.getByTestId('play')).toHaveAttribute('data-playing', 'false', {
+    timeout: 10_000,
+  });
+
+  await volume.fill('40');
+  await expect.poll(async () => (await audioState(app))!.level).toBeCloseTo(0.4);
+
+  await app.reload();
+  await expect(app.getByTestId('volume-value')).toHaveText('40%');
+  // Double-click resets to 100 %.
+  await app.getByTestId('volume').dblclick();
+  await expect(app.getByTestId('volume-value')).toHaveText('100%');
 });
