@@ -599,7 +599,9 @@ tag `vX.Y.Z`, push the tag, review and publish the draft release.
 - TypeScript strict mode, ESLint + Prettier.
 - `core` stays pure (no IO, no async, no global state) so it is trivially testable.
 - No platform-specific code outside `app` (desktop shell) and `media` (process spawning details).
-- Commit directly to `main`; CI must stay green.
+- All changes go through **pull requests**; `main` is only changed by merging a PR, and a PR is
+  only merged when its CI checks (Lint, Test on Linux, Windows and macOS) are green. Once the
+  repository is public, a ruleset on `main` enforces this (required PR + required status checks).
 - Update this file together with any change to behaviour or structure.
 
 ## 9. Roadmap
