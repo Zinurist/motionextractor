@@ -47,6 +47,10 @@ jobs:
     needs: [check, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/RELEASE_DISCLAIMER.md
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
           pattern: dist-*
@@ -58,8 +62,12 @@ jobs:
           LABEL: ${{ needs.check.outputs.label }}
         run: |
           # One rolling release: drop the old one (and its tag) and publish the new files.
+          {
+            echo "Automatic build of \`main\` at $GITHUB_SHA. Unsigned; for the stable version use the latest release."
+            echo
+            cat .github/RELEASE_DISCLAIMER.md
+          } > notes.md
           gh release delete nightly --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "Nightly build ($LABEL)" \
-            --notes "Automatic build of \`main\` at $GITHUB_SHA. Untested and unsigned; for the stable version use the latest release."
+            --title "Nightly build ($LABEL)" --notes-file notes.md
