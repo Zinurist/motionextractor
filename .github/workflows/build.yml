@@ -33,7 +33,7 @@ jobs:
       # linuxdeploy (AppImage) runs without FUSE.
       APPIMAGE_EXTRACT_AND_RUN: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
       - name: Add Rust targets
         shell: bash
