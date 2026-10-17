@@ -1,8 +1,16 @@
-import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, expectFrame, makeSquareVideo, startServer, test } from './fixtures';
+import {
+  expect,
+  expectFrame,
+  makeSquareVideo,
+  removeDir,
+  startServer,
+  stopServer,
+  test,
+} from './fixtures';
 
 const SLOW_FFMPEG = join(dirname(fileURLToPath(import.meta.url)), 'support', 'slow-ffmpeg.mjs');
 
@@ -145,7 +153,7 @@ test('waits for decoding instead of running ahead of the frames', async ({ brows
     // The image never falls more than a few frames behind the playhead.
     expect(maxLag).toBeLessThanOrEqual(4);
   } finally {
-    server.proc.kill();
-    rmSync(dir, { recursive: true, force: true });
+    await stopServer(server);
+    removeDir(dir);
   }
 });

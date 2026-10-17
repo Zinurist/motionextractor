@@ -110,6 +110,27 @@ export interface Server {
   api<T = unknown>(method: string, path: string, body?: unknown): Promise<T>;
 }
 
+/** Stops a server and waits for it to exit (on Windows its files stay locked until then). */
+export async function stopServer(server: Server): Promise<void> {
+  const proc = server.proc;
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+  const exited = new Promise<void>((ok) => proc.once('exit', () => ok()));
+  proc.kill();
+  await Promise.race([exited, new Promise((ok) => setTimeout(ok, 5000))]);
+}
+
+/**
+ * Removes a temporary directory. Best effort: on Windows, ffmpeg child processes of a killed server
+ * can keep files open for a moment, so retry and never fail a test over cleanup.
+ */
+export function removeDir(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch (e) {
+    console.warn(`could not remove ${dir}: ${e}`);
+  }
+}
+
 /** Starts `motion-extractor serve` with `dir` as root (`env` is added to the environment). */
 export async function startServer(
   dir: string,
@@ -162,7 +183,7 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
       const dir = mkdtempSync(join(tmpdir(), 'mx-e2e-media-'));
       const square = makeSquareVideo(join(dir, 'square.mkv'), { audio: true });
       await use({ dir, square });
-      rmSync(dir, { recursive: true, force: true });
+      removeDir(dir);
     },
     { scope: 'worker' },
   ],
@@ -175,8 +196,8 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     copyFileSync(media.square, video);
     const server = await startServer(dir, video);
     await use(server);
-    server.proc.kill();
-    rmSync(dir, { recursive: true, force: true });
+    await stopServer(server);
+    removeDir(dir);
   },
 
   app: async ({ page, server }, use) => {

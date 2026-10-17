@@ -513,7 +513,8 @@ losslessly so pixel values are exact).
 
 **E2E harness** (`e2e/tests/fixtures.ts`): every test gets its own server process
 (`serve --port 0 --root <tmp> --settings <tmp>/settings.json`, URL parsed from stdout) and root
-directory; fixture videos are generated per worker with ffmpeg (same moving square as
+directory (teardown waits for the server to exit and retries removing the directory — on Windows
+files stay locked until the server's ffmpeg processes are gone); fixture videos are generated per worker with ffmpeg (same moving square as
 `mx_media::testing`, FFV1 + FLAC, exact pixels). Pixel assertions read the frames the UI actually
 received via `window.mxDebug.store.sample`; frame/revision synchronisation uses the viewer's
 `data-frame`/`data-exact`/`data-rev` attributes. `MX_BIN` overrides the binary
@@ -586,7 +587,6 @@ dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browse
   `nightly` pre-release (not marked latest) is deleted and recreated with the new files — storage
   stays at one set of builds.
 - Builds are not code-signed or notarised yet (macOS: right-click → Open; Windows: SmartScreen).
-- **`.github/dependabot.yml`**: monthly grouped updates for actions, cargo and npm.
 - Workflows are checked with `actionlint` (part of `mise run lint`).
 
 **Releasing:** bump `version` in the root `Cargo.toml` (and `web`/`e2e` `package.json`), commit,
