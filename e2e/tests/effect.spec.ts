@@ -85,7 +85,7 @@ test('overlay draws the motion on top of the original video', async ({ app }) =>
   await setNumber(app, 'overlay-opacity-value', 0.5);
   await expectNewerRev(app, rev);
   await expectPixel(app, EDGE, ROW, [0, 128, 0]);
-  await app.getByTestId('background-black').check();
+  await app.getByTestId('background-solid').check();
   await expectPixel(app, OVERLAP, ROW, [0, 0, 0]);
 });
 
@@ -139,4 +139,40 @@ test('modified sliders can be reset to their defaults', async ({ app }) => {
   await setNumber(app, 'bloom-radius-value', 0.1);
   await app.getByTestId('bloom-radius-reset').click();
   await expect(app.getByTestId('bloom-radius-value')).toHaveValue('0.02');
+});
+
+test('solid background color', async ({ app }) => {
+  await atFrame10(app);
+  await expect(app.getByTestId('background-solid')).toBeChecked();
+  const rev = await currentRev(app);
+  await app.getByTestId('background-color').fill('#203040');
+  await expectNewerRev(app, rev);
+  await expectPixel(app, 2, 2, [32, 48, 64]);
+  await expectPixel(app, EDGE, ROW, [255, 255, 255]);
+  // The picker belongs to the solid background only.
+  await app.getByTestId('background-original').check();
+  await expect(app.getByTestId('background-color')).toBeHidden();
+});
+
+test('motion can show the original video', async ({ app }) => {
+  await atFrame10(app);
+  let rev = await currentRev(app);
+  await app.getByTestId('background-color').fill('#000080');
+  rev = await expectNewerRev(app, rev);
+  await app.getByTestId('motion-fill-original').check();
+  await expectNewerRev(app, rev);
+  await expect(app.getByTestId('motion-fill-hint')).toBeVisible();
+  await expect(app.getByTestId('color')).toBeDisabled();
+  // Leading edge (only in frame 10): the original's white square shows through.
+  await expectPixel(app, squareX(10) + SQUARE.size - 1, ROW, [255, 255, 255]);
+  // Trailing edge (only in frame 9): what frame 10 has there, black.
+  await expectPixel(app, squareX(9), ROW, [0, 0, 0]);
+  // Static parts: the background color.
+  await expectPixel(app, 2, 2, [0, 0, 128]);
+  // "Original background" would just be the video: not offered with this fill.
+  await expect(app.getByTestId('background-original')).toBeDisabled();
+  await app.getByTestId('motion-fill-color').check();
+  await expect(app.getByTestId('background-original')).toBeEnabled();
+  await app.getByTestId('background-original').check();
+  await expect(app.getByTestId('motion-fill-original')).toBeDisabled();
 });

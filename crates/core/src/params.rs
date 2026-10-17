@@ -44,9 +44,22 @@ pub enum BlendMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Background {
+    /// A solid color (`background_color`, black by default).
     #[default]
-    Black,
+    #[serde(alias = "black")]
+    Color,
     /// Overlay mode: motion is drawn on top of the original video.
+    Original,
+}
+
+/// What the moving parts show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MotionFill {
+    /// The motion color.
+    #[default]
+    Color,
+    /// The original video, as if seen through a window where things move.
     Original,
 }
 
@@ -56,6 +69,7 @@ pub struct Rgb(pub [u8; 3]);
 
 impl Rgb {
     pub const WHITE: Rgb = Rgb([255, 255, 255]);
+    pub const BLACK: Rgb = Rgb([0, 0, 0]);
 }
 
 impl fmt::Display for Rgb {
@@ -128,8 +142,12 @@ pub struct EffectParams {
     pub gain: f32,
     pub gamma: f32,
     pub color: Rgb,
+    /// Whether moving parts show `color` or the original video.
+    pub motion_fill: MotionFill,
     pub bloom: Bloom,
     pub background: Background,
+    /// Background color when `background` is `Color`.
+    pub background_color: Rgb,
     /// Brightness factor for the original video in overlay mode.
     pub background_brightness: f32,
     /// Opacity of the motion layer in overlay mode.
@@ -146,8 +164,10 @@ impl Default for EffectParams {
             gain: 4.0,
             gamma: 1.0,
             color: Rgb::WHITE,
+            motion_fill: MotionFill::Color,
             bloom: Bloom::default(),
-            background: Background::Black,
+            background: Background::Color,
+            background_color: Rgb::BLACK,
             background_brightness: 1.0,
             overlay_opacity: 1.0,
         }
@@ -349,6 +369,16 @@ mod tests {
         let fixed = Comparison::Fixed { frame: 4 };
         assert_eq!(fixed.reference_index(9, 30.0, 10), Some(4));
         assert_eq!(fixed.reference_index(0, 30.0, 4), None);
+    }
+
+    #[test]
+    fn background_accepts_the_old_black_name() {
+        let p: EffectParams = serde_json::from_str(r#"{"background": "black"}"#).unwrap();
+        assert_eq!(p.background, Background::Color);
+        assert_eq!(p.background_color, Rgb::BLACK);
+        let json = serde_json::to_string(&EffectParams::default()).unwrap();
+        assert!(json.contains(r#""background":"color""#), "{json}");
+        assert!(json.contains(r#""motion_fill":"color""#), "{json}");
     }
 
     #[test]

@@ -82,16 +82,22 @@ Per pixel (values normalised to `0..1`, sRGB-encoded):
    (max of channels).
 4. **Threshold & gain** `m' = clamp((m − threshold) × gain, 0, 1)`; optional `gamma` applied as
    `m'^(1/gamma)`. Defaults: `threshold = 0.02`, `gain = 4.0`, `gamma = 1.0`.
-5. **Colorise** motion layer `L = m' × color`. `color` is chosen with a color picker, default white.
+5. **Fill** of the motion layer (`motion_fill`): `color` (default; `F = color`, chosen with a color
+   picker, default white) or `original` (`F = C`: the moving parts show the original video, as if seen
+   through a window — the "solid background, motion shows the video" look from the video).
 6. **Bloom**, optional (default off): extract `L` above `bloom_threshold`, blur with radius
    `bloom_radius` (multi-scale downsample/blur/upsample), add `bloom_intensity ×` blurred result.
-   Bloom is computed in linear light and converted back to sRGB.
+   Bloom is computed in linear light and converted back to sRGB. With a color fill the blurred
+   mask is tinted with `color`; with the original fill the masked original itself is blurred, so it
+   glows in the video's colours.
 7. **Composite** over the background:
-   - Background **black** (default): `out = L + bloom`.
+   - Background **solid color** (default; `background_color`, default black):
+     `out = lerp(background_color, F, m') + bloom`.
    - Background **original video** (overlay mode): `bg = C × background_brightness` (default `1.0`,
      lower values dim the original so the motion pops), then
-     `out = lerp(bg, color, m' × overlay_opacity) + bloom`. Black parts of the motion layer are
-     therefore transparent — only motion is drawn on top of the original.
+     `out = lerp(bg, F, m' × overlay_opacity) + bloom` — only motion is drawn on top of the original.
+     (Original background with original fill would just be the video; the UI does not offer it.)
+   - `"background": "black"` from older presets is read as `"color"`.
    - Output is clamped to `0..1`.
 
 Optional, lower priority:
@@ -192,6 +198,7 @@ harness parses it).
 
 - Comparison: `--offset 3|3f|0.5s|-2` (rolling), `--reference 120|2.5s|1:02.5` (fixed).
 - Effect: `--metric luma|max`, `--threshold`, `--gain`, `--gamma`, `--denoise`, `--color #rrggbb`,
+  `--motion-fill color|original`, `--background-color #rrggbb`,
   `--bloom` (+ `--bloom-radius`, `--bloom-intensity`, `--bloom-threshold`), `--overlay`
   (+ `--background-brightness`, `--overlay-opacity`), `--classic`.
 - Output: `--codec h264|h265|vp9|prores|ffv1|png`, `--crf`, `--encoder-preset`, `--pix-fmt`,
@@ -208,9 +215,10 @@ harness parses it).
   "version": 1,
   "comparison": { "mode": "rolling", "offset": { "value": 0.5, "unit": "seconds" } },
   "effect": { "blend": "difference", "metric": "luma", "denoise": 0.0, "threshold": 0.02,
-              "gain": 4.0, "gamma": 1.0, "color": "#ffffff",
+              "gain": 4.0, "gamma": 1.0, "color": "#ffffff", "motion_fill": "color",
               "bloom": { "enabled": false, "threshold": 0.0, "radius": 0.02, "intensity": 1.0 },
-              "background": "black", "background_brightness": 1.0, "overlay_opacity": 1.0 },
+              "background": "color", "background_color": "#000000",
+              "background_brightness": 1.0, "overlay_opacity": 1.0 },
   "render": { "codec": "h264", "crf": null, "encoder_preset": null, "pix_fmt": null,
               "audio": "encode", "extra_args": [], "start": null, "end": null, "height": null }
 }
@@ -529,7 +537,7 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 | Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill, no loading-badge flicker during playback, buffering when decoding is slower than playback (ffmpeg throttled by `tests/support/slow-ffmpeg.mjs`) | `playback.spec.ts` |
 | Audio playback along with the video, mute and volume 0–200 % (remembered), no audio controls without audio | `audio.spec.ts` |
 | Rolling offset (frames/seconds, unit switch, negative, zero rejected), fixed reference | `comparison.spec.ts` |
-| Threshold/gain/gamma, color picker, bloom, overlay (brightness, opacity), classic mode, metric, denoise, slider reset buttons | `effect.spec.ts` |
+| Threshold/gain/gamma, color picker, bloom, solid background color, motion showing the original, overlay (brightness, opacity), classic mode, metric, denoise, slider reset buttons | `effect.spec.ts` |
 | Original/split/side-by-side views, split handle, zoom/pan/fit | `views.spec.ts` |
 | Trim: dragging the edges, playback/jumps within the trim, I/O keys, reset, render of the trimmed part, cleared on open | `trim.spec.ts` |
 | Render dialog: defaults, command preview, codecs, CRF, speed, pixel format, extra args, audio, range, resolution, PNG sequence, output browser, overwrite confirmation, cancel, errors, progress chip | `render.spec.ts` |

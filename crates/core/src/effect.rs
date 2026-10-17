@@ -1,9 +1,9 @@
 use rayon::prelude::*;
 
-use crate::blur::{blur_frame, gaussian_blur_plane};
+use crate::blur::{blur_frame, gaussian_blur, gaussian_blur_plane};
 use crate::color::{linear_to_srgb, srgb_to_linear, srgb8_to_linear};
 use crate::frame::Frame;
-use crate::params::{Background, BlendMode, EffectParams, Metric, ParamError};
+use crate::params::{Background, BlendMode, EffectParams, Metric, MotionFill, ParamError};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EffectError {
@@ -120,8 +120,8 @@ fn difference(current: &Prepared, reference: Option<&Frame>, p: &EffectParams) -
         Some(reference) => motion_mask(current.filtered(), reference, p),
         None => vec![0.0; w * h],
     };
-    let bloom = (p.bloom.enabled && p.bloom.intensity > 0.0).then(|| bloom_plane(&mask, w, h, p));
-    composite(frame, &mask, bloom.as_deref(), p)
+    let bloom = (p.bloom.enabled && p.bloom.intensity > 0.0).then(|| bloom_layer(frame, &mask, p));
+    composite(frame, &mask, bloom.as_ref(), p)
 }
 
 /// Per-pixel motion value `m'` in `0..=1` after metric, threshold, gain and gamma.
@@ -164,22 +164,46 @@ fn motion_mask(current: &Frame, reference: &Frame, p: &EffectParams) -> Vec<f32>
     mask
 }
 
-/// Blurred glow strength per pixel (multiply with the linear color and intensity).
-fn bloom_plane(mask: &[f32], w: usize, h: usize, p: &EffectParams) -> Vec<f32> {
-    let t = p.bloom.threshold;
-    let scale = if t < 1.0 { 1.0 / (1.0 - t) } else { 0.0 };
-    // The mask is a coverage value; glow is accumulated in linear light.
-    let bright: Vec<f32> = mask.par_iter().map(|&m| (m - t).max(0.0) * scale).collect();
-    gaussian_blur_plane(&bright, w, h, p.bloom.radius * h as f32)
+/// Linear-light glow added on top of the composite.
+enum Glow {
+    /// Blurred motion strength per pixel, tinted with the motion color.
+    Tinted(Vec<f32>),
+    /// Blurred revealed original (interleaved RGB), when the motion shows the original video.
+    Rgb(Vec<f32>),
 }
 
-fn composite(current: &Frame, mask: &[f32], bloom: Option<&[f32]>, p: &EffectParams) -> Frame {
+fn bloom_layer(frame: &Frame, mask: &[f32], p: &EffectParams) -> Glow {
+    let (w, h) = (frame.width() as usize, frame.height() as usize);
+    let t = p.bloom.threshold;
+    let scale = if t < 1.0 { 1.0 / (1.0 - t) } else { 0.0 };
+    let sigma = p.bloom.radius * h as f32;
+    // The mask is a coverage value; glow is accumulated in linear light.
+    let bright = |m: f32| (m - t).max(0.0) * scale;
+    match p.motion_fill {
+        MotionFill::Color => {
+            let plane: Vec<f32> = mask.par_iter().map(|&m| bright(m)).collect();
+            Glow::Tinted(gaussian_blur_plane(&plane, w, h, sigma))
+        }
+        MotionFill::Original => {
+            let rgb: Vec<f32> = frame
+                .data()
+                .par_iter()
+                .enumerate()
+                .map(|(i, &v)| bright(mask[i / 3]) * srgb8_to_linear(v))
+                .collect();
+            Glow::Rgb(gaussian_blur(&rgb, w, h, 3, sigma))
+        }
+    }
+}
+
+fn composite(current: &Frame, mask: &[f32], bloom: Option<&Glow>, p: &EffectParams) -> Frame {
     let w = current.width() as usize;
     let color = p.color.0.map(|c| c as f32 / 255.0);
-    let color_lin = p.color.0.map(srgb8_to_linear);
-    let glow = color_lin.map(|c| c * p.bloom.intensity);
-    let original = p.background == Background::Original;
-    let opacity = if original { p.overlay_opacity } else { 1.0 };
+    let tint = p.color.0.map(|c| srgb8_to_linear(c) * p.bloom.intensity);
+    let background = p.background_color.0.map(|c| c as f32 / 255.0);
+    let bg_original = p.background == Background::Original;
+    let fill_original = p.motion_fill == MotionFill::Original;
+    let opacity = if bg_original { p.overlay_opacity } else { 1.0 };
     let brightness = p.background_brightness / 255.0;
 
     let mut out = vec![0u8; current.data().len()];
@@ -189,14 +213,26 @@ fn composite(current: &Frame, mask: &[f32], bloom: Option<&[f32]>, p: &EffectPar
             let i = y * w + x;
             let a = mask[i] * opacity;
             for ch in 0..3 {
-                let bg = if original {
-                    src[x * 3 + ch] as f32 * brightness
+                let original = src[x * 3 + ch] as f32;
+                let bg = if bg_original {
+                    original * brightness
                 } else {
-                    0.0
+                    background[ch]
                 };
-                let mut v = bg + (color[ch] - bg) * a;
-                if let Some(b) = bloom {
-                    v = linear_to_srgb(srgb_to_linear(v) + b[i] * glow[ch]);
+                let fill = if fill_original {
+                    original / 255.0
+                } else {
+                    color[ch]
+                };
+                let mut v = bg + (fill - bg) * a;
+                match bloom {
+                    Some(Glow::Tinted(b)) => {
+                        v = linear_to_srgb(srgb_to_linear(v) + b[i] * tint[ch])
+                    }
+                    Some(Glow::Rgb(b)) => {
+                        v = linear_to_srgb(srgb_to_linear(v) + b[i * 3 + ch] * p.bloom.intensity)
+                    }
+                    None => {}
                 }
                 row[x * 3 + ch] = (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
             }
@@ -319,6 +355,86 @@ mod tests {
         let out = process(&cur, Some(&refr), &p).unwrap();
         assert_eq!(out.pixel(6, 6), [255, 64, 0]);
         assert_eq!(out.pixel(9, 0), [0, 0, 0]);
+    }
+
+    #[test]
+    fn solid_background_color() {
+        let (cur, refr) = square_frames(10, 10, (0, 0), (5, 5), 3);
+        let p = EffectParams {
+            background_color: Rgb([20, 40, 60]),
+            color: Rgb([255, 0, 0]),
+            ..Default::default()
+        };
+        let out = process(&cur, Some(&refr), &p).unwrap();
+        assert_eq!(
+            out.pixel(9, 0),
+            [20, 40, 60],
+            "static parts show the background color"
+        );
+        assert_eq!(
+            out.pixel(6, 6),
+            [255, 0, 0],
+            "motion shows the motion color"
+        );
+        // Without a reference only the background remains.
+        assert!(
+            process(&cur, None, &p)
+                .unwrap()
+                .data()
+                .chunks(3)
+                .all(|px| px == [20, 40, 60])
+        );
+    }
+
+    #[test]
+    fn motion_reveals_the_original() {
+        // Gradient original with a square that moved: the motion window shows the original pixels.
+        let mut refr = Frame::black(12, 12);
+        let mut cur = Frame::black(12, 12);
+        for y in 0..12 {
+            for x in 0..12 {
+                refr.set_pixel(x, y, [x as u8 * 10, 50, 0]);
+                cur.set_pixel(x, y, [x as u8 * 10, 50, 0]);
+            }
+        }
+        cur.fill_rect(4, 4, 4, 4, [250, 250, 250]);
+        let p = EffectParams {
+            motion_fill: MotionFill::Original,
+            background_color: Rgb([0, 0, 90]),
+            ..Default::default()
+        };
+        let out = process(&cur, Some(&refr), &p).unwrap();
+        assert_eq!(
+            out.pixel(5, 5),
+            [250, 250, 250],
+            "motion shows the current frame"
+        );
+        assert_eq!(
+            out.pixel(1, 1),
+            [0, 0, 90],
+            "static parts show the background color"
+        );
+    }
+
+    #[test]
+    fn revealed_original_glows_in_its_own_colors() {
+        let refr = Frame::black(60, 60);
+        let mut cur = Frame::black(60, 60);
+        cur.fill_rect(25, 25, 10, 10, [255, 0, 0]);
+        let p = EffectParams {
+            motion_fill: MotionFill::Original,
+            bloom: Bloom {
+                enabled: true,
+                radius: 0.08,
+                intensity: 2.0,
+                threshold: 0.0,
+            },
+            ..Default::default()
+        };
+        let out = process(&cur, Some(&refr), &p).unwrap();
+        let glow = out.pixel(22, 30);
+        assert!(glow[0] > 30, "red glow next to the square: {glow:?}");
+        assert_eq!((glow[1], glow[2]), (0, 0), "no other colors: {glow:?}");
     }
 
     #[test]
