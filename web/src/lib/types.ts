@@ -44,8 +44,10 @@ export interface EffectParams {
   gain: number;
   gamma: number;
   color: string;
+  motion_fill: 'color' | 'original';
   bloom: Bloom;
-  background: 'black' | 'original';
+  background: 'color' | 'original';
+  background_color: string;
   background_brightness: number;
   overlay_opacity: number;
 }
@@ -156,8 +158,10 @@ export function defaultPreset(): Preset {
       gain: 4,
       gamma: 1,
       color: '#ffffff',
+      motion_fill: 'color',
       bloom: { enabled: false, threshold: 0, radius: 0.02, intensity: 1 },
-      background: 'black',
+      background: 'color',
+      background_color: '#000000',
       background_brightness: 1,
       overlay_opacity: 1,
     },

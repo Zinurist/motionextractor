@@ -13,6 +13,6 @@ pub use blur::{gaussian_blur, gaussian_blur_plane};
 pub use effect::{EffectError, Prepared, process, process_prepared};
 pub use frame::{Frame, FrameError};
 pub use params::{
-    Background, BlendMode, Bloom, Comparison, EffectParams, Metric, Offset, ParamError, Rgb,
-    TimeUnit,
+    Background, BlendMode, Bloom, Comparison, EffectParams, Metric, MotionFill, Offset, ParamError,
+    Rgb, TimeUnit,
 };

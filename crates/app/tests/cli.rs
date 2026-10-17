@@ -305,3 +305,29 @@ fn serve_prints_url_and_answers() {
     child.kill().unwrap();
     child.wait().unwrap();
 }
+
+#[test]
+fn background_color_and_revealed_original() {
+    let (dir, input) = setup(MovingSquare::default());
+    let out = dir.path().join("out.mkv");
+    ok(&[
+        "render",
+        "-q",
+        s(&input),
+        s(&out),
+        "--codec",
+        "ffv1",
+        "--background-color",
+        "#102030",
+        "--motion-fill",
+        "original",
+    ]);
+    let spec = MovingSquare::default();
+    let f = frame(&out, 10);
+    let y = spec.y + 8;
+    assert_eq!(f.pixel(2, 2), [16, 32, 48], "background color");
+    // The square's leading edge (only in frame 10) shows the original: white.
+    assert_eq!(f.pixel(spec.x(10) + spec.size - 1, y), [255, 255, 255]);
+    // Its trailing edge (only in frame 9) reveals what frame 10 has there: black.
+    assert_eq!(f.pixel(spec.x(9), y), [0, 0, 0]);
+}

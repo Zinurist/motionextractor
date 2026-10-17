@@ -201,19 +201,46 @@
   </section>
 
   <section>
-    <h3>Color</h3>
+    <h3>Motion</h3>
+    <div class="radio-row">
+      <label>
+        <input
+          type="radio"
+          name="fill"
+          checked={fx.motion_fill === 'color'}
+          {disabled}
+          data-testid="motion-fill-color"
+          onchange={() => store.updatePreset({ effect: { motion_fill: 'color' } })}
+        />
+        Color
+      </label>
+      <label title={fx.background === 'original' ? 'Needs a solid background color' : ''}>
+        <input
+          type="radio"
+          name="fill"
+          checked={fx.motion_fill === 'original'}
+          disabled={disabled || fx.background === 'original'}
+          data-testid="motion-fill-original"
+          onchange={() => store.updatePreset({ effect: { motion_fill: 'original' } })}
+        />
+        Original video
+      </label>
+    </div>
     <div class="row">
       <label for="color">Motion color</label>
       <input
         id="color"
         type="color"
         value={fx.color}
-        {disabled}
+        disabled={disabled || fx.motion_fill === 'original'}
         data-testid="color"
         oninput={(e) => store.updatePreset({ effect: { color: e.currentTarget.value } })}
       />
       <span class="mono muted">{fx.color}</span>
     </div>
+    {#if fx.motion_fill === 'original'}
+      <p class="muted hint" data-testid="motion-fill-hint">Moving parts show the original video.</p>
+    {/if}
   </section>
 
   <section>
@@ -273,25 +300,40 @@
         <input
           type="radio"
           name="bg"
-          checked={fx.background === 'black'}
+          checked={fx.background === 'color'}
           {disabled}
-          data-testid="background-black"
-          onchange={() => store.updatePreset({ effect: { background: 'black' } })}
+          data-testid="background-solid"
+          onchange={() => store.updatePreset({ effect: { background: 'color' } })}
         />
-        Black
+        Solid color
       </label>
-      <label>
+      <label title={fx.motion_fill === 'original' ? 'Not with motion showing the original' : ''}>
         <input
           type="radio"
           name="bg"
           checked={fx.background === 'original'}
-          {disabled}
+          disabled={disabled || fx.motion_fill === 'original'}
           data-testid="background-original"
           onchange={() => store.updatePreset({ effect: { background: 'original' } })}
         />
         Original video
       </label>
     </div>
+    {#if fx.background === 'color'}
+      <div class="row">
+        <label for="bg-color">Color</label>
+        <input
+          id="bg-color"
+          type="color"
+          value={fx.background_color}
+          {disabled}
+          data-testid="background-color"
+          oninput={(e) =>
+            store.updatePreset({ effect: { background_color: e.currentTarget.value } })}
+        />
+        <span class="mono muted">{fx.background_color}</span>
+      </div>
+    {/if}
     <Slider
       label="Brightness"
       testid="background-brightness"

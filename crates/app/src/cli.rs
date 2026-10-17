@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use mx_core::{Background, BlendMode, Comparison, Metric, Offset, Rgb};
+use mx_core::{Background, BlendMode, Comparison, Metric, MotionFill, Offset, Rgb};
 use mx_engine::{Preset, Progress, RenderSpec};
 use mx_media::{Audio, Codec, Ffmpeg, command_line};
 
@@ -113,9 +113,15 @@ struct EffectArgs {
     bloom_intensity: Option<f32>,
     #[arg(long)]
     bloom_threshold: Option<f32>,
-    /// Draw the motion on top of the original video instead of black.
+    /// What moving parts show: the motion color, or the original video (seen through the motion).
+    #[arg(long)]
+    motion_fill: Option<FillArg>,
+    /// Draw the motion on top of the original video instead of a solid color.
     #[arg(long)]
     overlay: bool,
+    /// Solid background color as #rrggbb (when not using --overlay). Default black.
+    #[arg(long)]
+    background_color: Option<Rgb>,
     /// Brightness of the original video in overlay mode (0–1).
     #[arg(long)]
     background_brightness: Option<f32>,
@@ -125,6 +131,12 @@ struct EffectArgs {
     /// Classic mode: average of the frame and the inverted reference (grey image).
     #[arg(long)]
     classic: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum FillArg {
+    Color,
+    Original,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -293,9 +305,16 @@ fn apply_overrides(p: &mut Preset, args: &RenderArgs, fps: f64) {
     set(&mut fx.bloom.radius, e.bloom_radius);
     set(&mut fx.bloom.intensity, e.bloom_intensity);
     set(&mut fx.bloom.threshold, e.bloom_threshold);
+    if let Some(f) = e.motion_fill {
+        fx.motion_fill = match f {
+            FillArg::Color => MotionFill::Color,
+            FillArg::Original => MotionFill::Original,
+        };
+    }
     if e.overlay {
         fx.background = Background::Original;
     }
+    set(&mut fx.background_color, e.background_color);
     set(&mut fx.background_brightness, e.background_brightness);
     set(&mut fx.overlay_opacity, e.overlay_opacity);
     if e.classic {
