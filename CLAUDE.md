@@ -5,8 +5,8 @@
 > build/test commands or conventions must be reflected here in the same change.
 > Keep it free of anything specific to a particular developer machine — this is an open source project.
 
-Status: **M2 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
-server). Sections describe
+Status: **M3 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
+server, web UI). Sections describe
 the target state; the [Roadmap](#9-roadmap) tracks what is implemented.
 
 ---
@@ -343,15 +343,32 @@ parameters change (render options do not change it).
   `{"type":"cache","cache":{ranges,capacity,cached,decoding}}` (≤ 5/s), `{"type":"render","job":…}`
   (≤ 4/s plus final state), `{"type":"settings","settings":…}`, `{"type":"error","message":…}`.
 
-### 3.5 Frontend
+### 3.5 Frontend (`web/`)
 
-- Svelte 5 + TypeScript, Vite. No UI framework dependency beyond that; small hand-written
-  components.
-- Viewer draws frames with WebGL2 (`texSubImage2D` of RGB8 data, zoom/pan as a transform); falls
-  back to Canvas 2D.
-- All interactive elements carry stable `data-testid` attributes for E2E tests.
-- Layout: viewer (center), timeline (bottom), parameter panel (right: Mode, Difference, Color,
-  Bloom, Overlay), render dialog, settings dialog.
+- Svelte 5 (runes) + TypeScript (strict), built with Vite into `web/dist`, which `mx-server` embeds
+  (read from disk in debug builds). No UI framework beyond Svelte; small hand-written components.
+- `src/lib/`: `types.ts` (mirrors of the backend JSON), `api.ts` (REST client), `socket.ts`
+  (WebSocket with reconnect and per-view sequence numbers), `protocol.ts` (binary frame header),
+  `store.svelte.ts` (the single reactive app store: session state, playhead, playback loop, view
+  mode, coalesced preset patches, toasts), `renderer.ts` (WebGL2 drawing with Canvas 2D fallback),
+  helpers `time.ts`, `paths.ts` (POSIX + Windows), `args.ts`, `merge.ts`.
+- `src/components/`: `TopBar`, `Viewer` (view modes, zoom/pan, split handle), `Timeline` (scrub
+  track with cached ranges, reference marker, render range), `ParamsPanel`, `RenderDialog`,
+  `SettingsDialog`, `FileBrowser` (server mode; native dialogs in desktop mode), `Modal`,
+  `Slider`, `Toasts`, `Icon` (inline SVG — no dependence on system fonts/emoji).
+- Parameter edits apply locally at once and are sent as JSON merge patches; while one request is
+  in flight further edits are coalesced into the next. `preset` events from the server are adopted
+  only if they differ from what this client last sent (other clients, preset loads).
+- Frames: the store requests the views the current mode needs (`output`, `original` or both) on
+  every playhead/mode/revision change; responses older than the newest shown one are dropped.
+  Playback advances the playhead by wall-clock time, so slow frames are skipped, not slowed.
+- Viewer uploads RGB8 frames as WebGL textures (`texImage2D`), JPEG frames via `createImageBitmap`;
+  nearest-neighbour filtering from 200% zoom. 100% = one preview pixel per CSS pixel.
+- Keyboard: Space play/pause, ←/→ ±1 frame, Shift+←/→ ±1 s, Home/End (ignored while typing).
+- Testability: every control has a stable `data-testid`; the viewer exposes `data-frame`,
+  `data-exact`, `data-rev`, `data-mode`; `window.mxDebug.store.sample(view, x, y)` returns the RGB
+  value of the last received raw frame.
+- Dark theme with CSS custom properties (`src/app.css`).
 
 ---
 
@@ -445,16 +462,17 @@ cargo build --release                                   # target/release/motion-
 cargo run -p motion-extractor -- render IN OUT [opts]   # CLI
 cargo test --workspace                                  # Rust unit + integration tests
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+npm --prefix web ci && npm --prefix web run build      # build the UI (embedded by crates/server)
+cargo run -p motion-extractor -- serve [FILE]          # then open http://127.0.0.1:8090/
+npm --prefix web run dev                                # Vite dev server, proxies /api to :8090
+npm --prefix web test                                   # frontend unit tests (Vitest)
+npm --prefix web run check && npm --prefix web run lint # svelte-check, Prettier, ESLint
 ```
 
 Planned (later milestones):
 
 ```
-npm --prefix web ci && npm --prefix web run build      # build frontend (embedded by crates/server)
 cargo run -p motion-extractor                           # desktop GUI
-cargo run -p motion-extractor --no-default-features -- serve --port 8080   # headless server
-npm --prefix web run dev                                # Vite dev server, proxies /api to :8080
-npm --prefix web test                                   # frontend unit tests
 npm --prefix e2e ci && npx --prefix e2e playwright test # E2E (starts the server itself)
 ```
 
@@ -483,7 +501,7 @@ npm --prefix e2e ci && npx --prefix e2e playwright test # E2E (starts the server
   (incl. classic mode and presets)
 - [x] M2 — `engine` (cache, prefetch, processing, settings, render jobs) + `server` API + WebSocket
   frames + `serve` command
-- [ ] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs
+- [x] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs, file browser
 - [ ] M4 — Playwright E2E suite covering §2 completely
 - [ ] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke tests
 - [ ] M6 — GitHub Actions CI + release pipeline with installers
