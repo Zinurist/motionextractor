@@ -588,14 +588,17 @@ dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browse
     install ffmpeg (apt / choco / brew), `mise run test:rust`, browsers with system dependencies,
     `mise run e2e`, desktop smoke test (`--smoke-test`, under `xvfb-run` on Linux). Reports and traces
     are uploaded on failure.
-- **`.github/workflows/build.yml`** (reusable, input `label`): the platform build matrix —
-  Linux (Ubuntu 22.04 for glibc compatibility): `.deb` and `.rpm` (system ffmpeg) and an `.AppImage`
-  with bundled ffmpeg; Windows: `.msi` and NSIS `-setup.exe` with bundled ffmpeg; macOS: universal
-  `.dmg` with bundled (lipo'd) ffmpeg; plus headless CLI archives
+- **`.github/workflows/build.yml`** (reusable, input `label`): the platform build matrix, on native
+  runners for each architecture —
+  Linux x86_64 and arm64 (Ubuntu 22.04 / 22.04-arm for glibc compatibility): `.deb` and `.rpm`
+  (system ffmpeg) and an `.AppImage` with bundled ffmpeg; Windows x86_64: `.msi` and NSIS
+  `-setup.exe` with bundled ffmpeg; Windows arm64 (`windows-11-arm`): NSIS `-setup.exe` only (WiX
+  cannot build ARM64 MSIs); macOS: universal (arm64 + x86_64) `.dmg` with bundled (lipo'd) ffmpeg;
+  plus headless CLI archives
   (`motion-extractor-cli-<label>-<target>`, built `--no-default-features`). File names carry the
   label instead of the crate version. Artifacts `dist-<target>` are kept for 7 days.
   - `scripts/fetch-ffmpeg.sh <target> crates/app/binaries` downloads static GPL builds (BtbN for
-    Linux/Windows, martin-riedl.de for macOS with SHA-256 check) named `ffmpeg-<target>` for
+    Linux/Windows x86_64 and arm64, martin-riedl.de for macOS with SHA-256 check) named `ffmpeg-<target>` for
     `tauri.ffmpeg.conf.json`.
 - **`.github/workflows/release.yml`** (tag `v*`, or manual for a dry run): `build.yml` with the tag as
   label, then a **draft** GitHub release with all files (published by hand).
