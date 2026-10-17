@@ -44,7 +44,7 @@
     })),
   };
   PRESETS.h265 = PRESETS.h264;
-  const HEIGHTS = [2160, 1440, 1080, 720, 540, 480, 360];
+  const HEIGHTS = [2160, 1440, 1080, 720, 540, 480, 360, 240, 180, 120];
 
   function update(patch: Partial<RenderOptions>) {
     store.updatePreset({ render: patch });
@@ -284,7 +284,7 @@
     {#if running}
       <button data-testid="render-cancel" onclick={cancel}>Cancel render</button>
     {/if}
-    <button onclick={onClose}>Close</button>
+    <button data-testid="render-close" onclick={onClose}>Close</button>
     <button
       class="primary"
       data-testid="render-start-button"

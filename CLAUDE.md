@@ -5,8 +5,8 @@
 > build/test commands or conventions must be reflected here in the same change.
 > Keep it free of anything specific to a particular developer machine — this is an open source project.
 
-Status: **M3 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
-server, web UI). Sections describe
+Status: **M4 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
+server, web UI, E2E suite). Sections describe
 the target state; the [Roadmap](#9-roadmap) tracks what is implemented.
 
 ---
@@ -445,10 +445,29 @@ losslessly so pixel values are exact).
 | Integration (Rust) | `cargo test` with real ffmpeg | probe, decode, frame-accurate seeking (MP4, MKV, MPEG-TS; 25/29.97/30 fps), every codec, render pipeline (`crates/engine/tests`): render fixture → decode output → assert motion pixels where the square moved and black elsewhere; ring vs. dual decoder equivalence; cancellation |
 | CLI (Rust) | `crates/app/tests/cli.rs` runs the built binary | every `render` option, presets, overwrite protection, error reporting |
 | Unit (web) | Vitest | stores, unit conversion (frames ↔ seconds), WS protocol parsing |
-| E2E | Playwright (Chromium + WebKit) against `motion-extractor serve` | open video, scrub, play, all params change the viewer, both comparison modes, color picker, bloom, overlay, view modes, settings persistence, render with defaults and custom options, cancel render, presets |
+| E2E | Playwright (Chromium + WebKit) against `motion-extractor serve` (`e2e/`) | see the coverage table below |
 | Desktop smoke | CI on Linux (Xvfb), Windows and macOS | binary launches the window, UI loads, then exits (`--smoke-test`) |
 
-E2E assertions on pixels use `GET /api/frame/{i}` and canvas readback.
+**E2E harness** (`e2e/tests/fixtures.ts`): every test gets its own server process
+(`serve --port 0 --root <tmp> --settings <tmp>/settings.json`, URL parsed from stdout) and root
+directory; fixture videos are generated per worker with ffmpeg (same moving square as
+`mx_media::testing`, FFV1 + FLAC, exact pixels). Pixel assertions read the frames the UI actually
+received via `window.mxDebug.store.sample`; frame/revision synchronisation uses the viewer's
+`data-frame`/`data-exact`/`data-rev` attributes. `MX_BIN` overrides the binary
+(default `target/debug/motion-extractor`), `MX_BROWSERS=chromium,webkit` selects engines
+(Chromium ≈ WebView2, WebKit ≈ WebKitGTK/WKWebView).
+
+| Feature (§2) | E2E spec |
+|---|---|
+| Open via file browser, navigation, non-video errors, connection state | `open.spec.ts` |
+| Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill | `playback.spec.ts` |
+| Rolling offset (frames/seconds, unit switch, negative, zero rejected), fixed reference | `comparison.spec.ts` |
+| Threshold/gain/gamma, color picker, bloom, overlay (brightness, opacity), classic mode, metric, denoise | `effect.spec.ts` |
+| Original/split/side-by-side views, split handle, zoom/pan/fit | `views.spec.ts` |
+| Render dialog: defaults, command preview, codecs, CRF, speed, pixel format, extra args, audio, range, resolution, PNG sequence, output browser, overwrite confirmation, cancel, errors, progress chip | `render.spec.ts` |
+| Settings: memory estimate, persistence, preview resolution, validation | `settings.spec.ts` |
+| Preset save/load, invalid presets | `presets.spec.ts` |
+| Parameter sync between clients | `sync.spec.ts` |
 
 ---
 
@@ -467,13 +486,16 @@ cargo run -p motion-extractor -- serve [FILE]          # then open http://127.0.
 npm --prefix web run dev                                # Vite dev server, proxies /api to :8090
 npm --prefix web test                                   # frontend unit tests (Vitest)
 npm --prefix web run check && npm --prefix web run lint # svelte-check, Prettier, ESLint
+npm --prefix e2e ci && npx --prefix e2e playwright install --with-deps chromium webkit
+cargo build && npm --prefix e2e test                    # E2E against target/debug (UI must be built)
+MX_BROWSERS=chromium,webkit npm --prefix e2e test       # both engines
+npm --prefix e2e run lint                               # Prettier + tsc for the tests
 ```
 
 Planned (later milestones):
 
 ```
 cargo run -p motion-extractor                           # desktop GUI
-npm --prefix e2e ci && npx --prefix e2e playwright test # E2E (starts the server itself)
 ```
 
 ## 7. CI / CD (GitHub Actions)
@@ -502,7 +524,7 @@ npm --prefix e2e ci && npx --prefix e2e playwright test # E2E (starts the server
 - [x] M2 — `engine` (cache, prefetch, processing, settings, render jobs) + `server` API + WebSocket
   frames + `serve` command
 - [x] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs, file browser
-- [ ] M4 — Playwright E2E suite covering §2 completely
+- [x] M4 — Playwright E2E suite covering §2 (36 tests, Chromium and WebKit)
 - [ ] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke tests
 - [ ] M6 — GitHub Actions CI + release pipeline with installers
 - [ ] Later — alpha output, Flatpak, presets library, faster bloom compositing
