@@ -141,6 +141,19 @@ pub async fn list(
     }))
 }
 
+/// `dir/name`, or the first of `name (2).ext`, `name (3).ext`, … that does not exist yet.
+fn free_name(dir: &Path, name: &str) -> PathBuf {
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    std::iter::once(name.to_owned())
+        .chain((2..).map(|n| format!("{stem} ({n}){ext}")))
+        .map(|candidate| dir.join(candidate))
+        .find(|p| !p.exists())
+        .expect("an unused name exists")
+}
+
 /// Checks an uploaded file name: a plain, visible file name without path components.
 fn valid_name(name: &str) -> bool {
     let trimmed = name.trim();
@@ -159,6 +172,9 @@ pub struct UploadQuery {
     name: String,
     #[serde(default)]
     overwrite: bool,
+    /// If the name is taken, use the first free "name (2).ext", "name (3).ext", ….
+    #[serde(default)]
+    unique: bool,
 }
 
 #[derive(Serialize)]
@@ -190,14 +206,22 @@ pub async fn upload(
             dir.display()
         )));
     }
-    let target = dir.join(&q.name);
+    let mut target = dir.join(&q.name);
+    if q.unique {
+        target = free_name(&dir, &q.name);
+    }
     if target.exists() && !q.overwrite {
         return Err(ApiError(
             axum::http::StatusCode::CONFLICT,
             format!("{} already exists", target.display()),
         ));
     }
-    let part = dir.join(format!(".{}.part", q.name));
+    let file_name = target
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let part = dir.join(format!(".{file_name}.part"));
     let io = |e: std::io::Error| {
         ApiError(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -290,6 +314,20 @@ pub async fn download(
 #[cfg(test)]
 mod tests {
     use super::valid_name;
+
+    #[test]
+    fn free_names() {
+        let dir = std::env::temp_dir().join(format!("mx-free-name-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(super::free_name(&dir, "clip.mp4"), dir.join("clip.mp4"));
+        std::fs::write(dir.join("clip.mp4"), b"").unwrap();
+        assert_eq!(super::free_name(&dir, "clip.mp4"), dir.join("clip (2).mp4"));
+        std::fs::write(dir.join("clip (2).mp4"), b"").unwrap();
+        assert_eq!(super::free_name(&dir, "clip.mp4"), dir.join("clip (3).mp4"));
+        std::fs::write(dir.join("README"), b"").unwrap();
+        assert_eq!(super::free_name(&dir, "README"), dir.join("README (2)"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn upload_names() {

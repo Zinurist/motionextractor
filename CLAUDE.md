@@ -374,7 +374,7 @@ root).
 | `GET /api/frame/{i}?view=output\|original&full=false` | Frame as PNG (preview cache, or decoded at full resolution) |
 | `GET /api/audio` | The video's audio as WAV (16-bit stereo 48 kHz, HTTP range requests supported); 404 without audio |
 | `GET /api/fs/list?path=` | Directory listing `{path, parent, entries: [{name, path, dir, size}]}` (hidden files skipped) |
-| `POST /api/fs/upload?dir=&name=[&overwrite=true]` | Raw request body (no size limit) stored as `dir/name` via a hidden `.name.part` file renamed on completion → `{path, size}`; 409 if it exists, 400 for names with path components or a leading dot |
+| `POST /api/fs/upload?dir=&name=[&overwrite=true][&unique=true]` | Raw request body (no size limit) stored as `dir/name` via a hidden `.name.part` file renamed on completion → `{path, size}`; with `unique` a taken name becomes `name (2).ext` etc. (the UI always sends it); otherwise 409 if it exists; 400 for names with path components or a leading dot |
 | `GET /api/fs/download?path=` | File as an attachment (`Content-Disposition` with UTF-8 name, range requests supported); 400 for directories |
 | `POST /api/dialog/{open-video\|save-video\|open-preset\|save-preset}` | Native dialog (desktop) → `{path}` |
 | `WS /api/ws` | Frame requests/responses and server events |

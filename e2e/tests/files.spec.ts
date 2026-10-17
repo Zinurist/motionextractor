@@ -8,6 +8,7 @@ test('uploads a video and opens it', async ({ app, server }) => {
   try {
     const local = makeSquareVideo(join(elsewhere, 'holiday.mkv'), { frames: 40 });
     await app.getByTestId('open-video').click();
+    await expect(app.getByTestId('fb-upload')).toBeEnabled();
     await app.getByTestId('fb-upload-input').setInputFiles(local);
     await expect(app.getByTestId('file-browser')).toBeHidden();
     await expect(app.getByTestId('video-name')).toContainText('holiday.mkv');
@@ -17,6 +18,7 @@ test('uploads a video and opens it', async ({ app, server }) => {
 
     // A second upload with the same name does not overwrite the first one.
     await app.getByTestId('open-video').click();
+    await expect(app.getByTestId('fb-upload')).toBeEnabled();
     await app.getByTestId('fb-upload-input').setInputFiles(local);
     await expect(app.getByTestId('video-name')).toContainText('holiday (2).mkv');
   } finally {

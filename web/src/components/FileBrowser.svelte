@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { api, downloadUrl, uniqueName, uploadFile } from '../lib/api';
+  import { api, downloadUrl, uploadFile } from '../lib/api';
   import { basename, join } from '../lib/paths';
   import { store } from '../lib/store.svelte';
   import type { Listing } from '../lib/types';
@@ -62,13 +62,13 @@
   /** Uploads a video into the current directory and opens it. */
   async function upload(file: File | undefined) {
     if (!file || !listing) return;
-    const name = uniqueName(file.name, new Set(listing.entries.map((e) => e.name)));
+    const name = file.name;
     uploading = { name, progress: 0 };
     try {
       const done = await uploadFile(listing.path, file, name, (p) => {
         if (uploading) uploading.progress = p;
       });
-      store.toast('info', `Uploaded ${name}`);
+      store.toast('info', `Uploaded ${basename(done.path)}`);
       onPick(done.path);
     } catch (e) {
       store.error(e);
