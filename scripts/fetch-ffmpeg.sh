@@ -15,12 +15,21 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 btbn() {
-  # Newest versioned release asset for a platform, e.g. ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz
-  local platform=$1 ext=$2
-  curl -fsSL https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest |
-    jq -r --arg p "$platform" --arg e "$ext" \
+  # Newest versioned build for a platform from the "latest" tag, e.g.
+  # ffmpeg-n9.0-latest-linux64-gpl-9.0.tar.xz.
+  # Authenticated when GITHUB_TOKEN is set (anonymous API calls from CI runners hit rate limits);
+  # falls back to the stable "master" build name if the lookup fails.
+  local platform=$1 ext=$2 auth=() url
+  [ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+  url=$(curl -fsSL "${auth[@]}" https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest |
+    jq -r --arg p "$platform" --arg e "${ext//./\\.}" \
       '.assets[] | select(.name | test("^ffmpeg-n[0-9.]+-latest-" + $p + "-gpl-[0-9.]+\\." + $e + "$")) | .browser_download_url' |
-    sort -V | tail -n 1
+    sort -V | tail -n 1) || true
+  if [ -z "$url" ]; then
+    echo "release lookup failed, using the latest master build for $platform" >&2
+    url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-$platform-gpl.$ext"
+  fi
+  echo "$url"
 }
 
 riedl() {
@@ -41,7 +50,7 @@ riedl() {
 
 btbn_linux() {
   local url
-  url=$(btbn "$1" 'tar\.xz')
+  url=$(btbn "$1" tar.xz)
   curl -fsSL -o "$tmp/ff.tar.xz" "$url"
   tar -xJf "$tmp/ff.tar.xz" -C "$tmp"
   for tool in ffmpeg ffprobe; do cp "$tmp"/ffmpeg-*/bin/$tool "$out/$tool-$target"; done
