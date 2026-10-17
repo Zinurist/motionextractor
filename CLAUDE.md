@@ -607,6 +607,12 @@ dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browse
   `nightly` pre-release (not marked latest) is deleted and recreated with the new files — storage
   stays at one set of builds.
 - Builds are not code-signed or notarised yet (macOS: right-click → Open; Windows: SmartScreen).
+- **Disclaimer**: `.github/RELEASE_DISCLAIMER.md` (the project is vibe coded; the maintainer only
+  uses the Linux CLI binary in `serve` mode; Windows/macOS builds and .deb/.rpm/.AppImage packages are built
+  automatically — Windows and macOS also run the test suite — but not used by the maintainer:
+  provided for convenience, at your own risk) is shown at the top of the README and
+  prepended to the notes of every release and of the nightly pre-release. Keep the three in sync by
+  editing only that file (and the copy in the README).
 - Workflows are checked with `actionlint` (part of `mise run lint`).
 
 **Releasing:** bump `version` in the root `Cargo.toml` (and `web`/`e2e` `package.json`), commit,
