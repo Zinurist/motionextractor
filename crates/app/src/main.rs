@@ -1,4 +1,5 @@
 mod cli;
+mod serve;
 mod timespec;
 
 use std::process::ExitCode;

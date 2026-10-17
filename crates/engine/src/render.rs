@@ -381,3 +381,15 @@ fn reference_index(t: u64, k: i64, count: u64) -> Option<u64> {
     let r = t as i64 - k;
     (r >= 0 && (r as u64) < count).then_some(r as u64)
 }
+
+/// Whether writing to `path` would replace existing data: an existing file or, for a `%` pattern
+/// (image sequence), a non-empty directory.
+pub fn output_occupied(path: &std::path::Path) -> bool {
+    if path.to_string_lossy().contains('%') {
+        path.parent()
+            .and_then(|d| std::fs::read_dir(d).ok())
+            .is_some_and(|mut entries| entries.next().is_some())
+    } else {
+        path.exists()
+    }
+}

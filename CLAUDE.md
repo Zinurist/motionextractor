@@ -5,7 +5,8 @@
 > build/test commands or conventions must be reflected here in the same change.
 > Keep it free of anything specific to a particular developer machine — this is an open source project.
 
-Status: **M1 done** (effect pipeline, ffmpeg integration, `render`/`probe` CLI). Sections describe
+Status: **M2 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
+server). Sections describe
 the target state; the [Roadmap](#9-roadmap) tracks what is implemented.
 
 ---
@@ -136,17 +137,20 @@ See [§4 Preview engine](#4-preview-engine) for how this is made fast.
 
 ### 2.6 Settings (persisted)
 
-Stored as JSON in the OS-standard per-user config directory.
+Stored as JSON in the OS-standard per-user config directory (`<config dir>/motion-extractor/settings.json`,
+overridable with `--settings`). Missing keys use defaults.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `cache.max_memory` | 2 GiB | Upper bound for the preview frame cache. UI shows how many frames / seconds fit at the current preview resolution. |
-| `preview.resolution` | 540p | Height of cached preview frames (aspect preserved). |
-| `preview.prefetch_seconds` | 10 | Forward window prefetched around the playhead when the whole video does not fit. |
-| `decode.hwaccel` | `none` | Optional `-hwaccel auto`. |
-| `decode.workers` | 2 | Parallel ffmpeg decoder processes for cache filling. |
-| `ffmpeg.path` / `ffprobe.path` | auto | Auto = bundled binary next to the app, then `PATH`. |
-| `render.last_preset` | H.264 MP4 | |
+| `cache_max_memory_mb` | 2048 | Upper bound for the preview frame cache (64 – 1048576). UI shows how many frames / seconds fit. |
+| `preview_height` | 540 | Height of cached preview frames (aspect preserved, never above native); 0 = native. |
+| `decode_workers` | 2 | Parallel ffmpeg decoder processes filling the cache (1 – 16). |
+| `hwaccel` | false | `-hwaccel auto` for preview decoding. |
+| `jpeg_quality` | 85 | Quality of preview frames sent to non-loopback clients. |
+| `ffmpeg_path` / `ffprobe_path` | null | Custom executables (applied at startup); null = auto (env var, bundled, `PATH`). |
+
+Changing `preview_height`, `decode_workers` or `hwaccel` reopens the video (cache refilled).
+The current preset (comparison, effect, render options) is session state, not a setting.
 
 Effect parameters + render options of a session can be saved/loaded as a **preset file** (JSON).
 
@@ -156,10 +160,14 @@ Single binary `motion-extractor`:
 
 ```
 motion-extractor [FILE]                     # start desktop GUI (default)
-motion-extractor serve [--bind ADDR] [--port N] [--root DIR]... [--token T] [FILE]
+motion-extractor serve [--bind ADDR] [--port N] [--root DIR]... [--token T] [--settings FILE] [FILE]
 motion-extractor render IN OUT [effect/render options | --preset FILE]
 motion-extractor probe FILE                 # video info as JSON
 ```
+
+`serve` defaults: bind `127.0.0.1`, port 8090 (0 = any free port), root = current directory. It
+prints `Motion Extractor listening on http://HOST:PORT/[?token=T]` as its first stdout line (the E2E
+harness parses it).
 
 `render` makes every feature scriptable and is used heavily by integration tests. Options
 (`motion-extractor render --help` is authoritative):
@@ -293,36 +301,47 @@ supports `serve`, `render` and `probe`.
 
 ### 3.4 HTTP / WebSocket API (v1)
 
-All JSON unless noted. Prefix `/api`.
+All JSON unless noted; errors are `{"error": "…"}` with 400 (invalid input), 403 (path outside the
+roots), 409 (no video / render running / output exists), 422 (not a video), 501 (no dialogs).
+Paths in requests are checked against the roots in server mode (relative = relative to the first
+root).
 
 | Method & path | Purpose |
 |---|---|
-| `GET /` | Frontend SPA |
-| `GET /api/info` | App version, mode (`desktop`/`server`), ffmpeg version/availability |
+| `GET /` (and any non-API path) | Frontend SPA (embedded `web/dist`) |
+| `GET /api/info` | `{version, mode, ffmpeg: {ok, version, error}, roots, dialogs}` |
+| `GET /api/session` | `{video, preset, rev, cache, render, settings}` — everything a client needs on connect |
+| `POST /api/open` `{path}` | Open a video → `{info, preview_width, preview_height}` |
+| `GET /api/preset`, `PUT` (replace), `PATCH` (JSON merge patch) | Current preset → `{preset, rev}` |
+| `POST /api/preset/save`, `/api/preset/load` `{path}` | Preset files |
 | `GET/PUT /api/settings` | Persisted settings |
-| `POST /api/open` `{path}` | Open a video; returns probe info |
-| `POST /api/dialog/open`, `/api/dialog/save` | Native dialogs (desktop mode only) |
-| `GET /api/fs/list?path=` | Server-side file browser (server mode, within roots) |
-| `GET/PUT /api/params` | Current effect parameters (session state) |
-| `GET/PUT /api/preset` | Export/import params + render options as preset JSON |
-| `POST /api/render` `{output, options}` | Start render job → `{id}` |
-| `GET /api/render/{id}`, `DELETE /api/render/{id}` | Job status / cancel |
-| `GET /api/frame/{index}?view=output&scale=preview` | Single frame as PNG (debugging, tests) |
+| `GET /api/render` | Current/last job (`JobStatus` or null) |
+| `POST /api/render` `{output, overwrite}` | Start a render job with the current preset |
+| `DELETE /api/render` | Cancel → `{cancelled}` |
+| `POST /api/render/command` `{output}` | ffmpeg command the render would run → `{command}` |
+| `GET /api/frame/{i}?view=output\|original&full=false` | Frame as PNG (preview cache, or decoded at full resolution) |
+| `GET /api/fs/list?path=` | Directory listing `{path, parent, entries: [{name, path, dir, size}]}` (hidden files skipped) |
+| `POST /api/dialog/{open-video\|save-video\|open-preset\|save-preset}` | Native dialog (desktop) → `{path}` |
 | `WS /api/ws` | Frame requests/responses and server events |
+
+`JobStatus`: `{id, state: running|finished|failed|cancelled, done, total, fps, eta_seconds,
+elapsed_seconds, output, command, error}`. `rev` increases whenever comparison or effect
+parameters change (render options do not change it).
 
 **WebSocket protocol.** Text messages are JSON, binary messages are frames.
 
 - Client → server: `{"type":"view","seq":n,"frame":i,"view":"output|original"}`.
-- Server → client binary frame: 32-byte little-endian header
-  `{magic u32, seq u32, frame u32, width u32, height u32, format u32 (0=RGB8 raw, 1=JPEG), reserved}`
-  followed by the payload.
-- **Latest wins**: the server keeps only the newest pending request per client; stale requests are
-  dropped. The client keeps at most 2 requests in flight (pipelining during playback).
-- Raw RGB on loopback connections; JPEG (quality configurable) for remote clients. Lossy encoding is
-  only ever applied *after* the effect, never to source frames (compression artifacts would show up
-  as false motion).
-- Server events: `cache` (cached frame ranges), `params` (changed by another client), `render`
-  (progress/finished/failed), `opened`, `error`.
+- Server → client binary frame: 32-byte header of eight little-endian `u32`:
+  `magic "MXF1", seq, frame index, width, height, format (0 = RGB8 raw, 1 = JPEG),
+  flags (1 = exact, 2 = original view), rev`, followed by the payload.
+- **Latest wins**, per view: each view (output/original) has one slot per client; a request
+  replaces the pending one and aborts the one being waited on. If the frame is not cached within
+  15 ms, a stand-in (nearest cached frame, flag *exact* unset) is sent first, then the exact frame.
+- Raw RGB on loopback connections; JPEG for remote clients. Lossy encoding is only ever applied
+  *after* the effect, never to source frames (compression artifacts would show up as false motion).
+- Server events (text): `{"type":"opened","video":…}`, `{"type":"preset","preset":…,"rev":n}`,
+  `{"type":"cache","cache":{ranges,capacity,cached,decoding}}` (≤ 5/s), `{"type":"render","job":…}`
+  (≤ 4/s plus final state), `{"type":"settings","settings":…}`, `{"type":"error","message":…}`.
 
 ### 3.5 Frontend
 
@@ -341,36 +360,43 @@ All JSON unless noted. Prefix `/api`.
 The engine makes scrubbing instant by separating **slow** work (decoding) from **fast** work (the
 effect at preview resolution).
 
-### 4.1 Frame cache
+### 4.1 Frame cache (`engine::cache`)
 
 - Holds decoded **source** frames at preview resolution (`rgb24`), keyed by frame index, shared as
   `Arc<Frame>`. Cost per frame = `w × h × 3` bytes (960×540 ≈ 1.5 MB → 2 GiB ≈ 1400 frames ≈ 47 s
-  at 30 fps).
-- Bounded by `cache.max_memory`. If the whole video fits, the cache fills completely in the
-  background and everything becomes random access.
-- Otherwise a **window around the playhead** is kept: `[t − k − back, t + prefetch]` (direction
-  aware: during reverse scrubbing the window extends backwards).
-- **Eviction** is distance-based (frames furthest from the playhead go first), not LRU. The fixed
-  reference frame and the frames needed for the current view (`t`, `t − k`) are pinned.
-- Changing preview resolution or opening another video clears the cache.
+  at 30 fps). Capacity = budget / frame size (at least 3 frames).
+- If the whole video fits, the cache fills completely in the background and everything becomes
+  random access.
+- **Eviction** is distance based: the frame furthest from the playhead goes first, where frames
+  behind the playhead count double. Pinned frames (current, its reference, the fixed reference
+  frame) are never evicted. A frame that would itself be the first victim is rejected.
+- Opening a video or changing the preview size resets the cache (a generation counter makes stale
+  inserts from old decoders no-ops).
 
-### 4.2 Decoding / prefetch scheduler
+### 4.2 Prefetch scheduler (`engine::prefetch`)
 
-- Sequential decoding is fast, seeking is slow — so decoding happens in **runs**: a decoder worker
-  (one ffmpeg process) starts at a frame index and streams forward until cancelled or the run is
-  complete.
-- Priorities: (1) frames for the current view, (2) forward window in playback direction,
-  (3) backward window, (4) the rest of the video if the budget allows.
-- `decode.workers` processes run in parallel on different segments.
-- On a cache miss for the current view the viewer shows the nearest available frame (marked as
-  "loading") until the exact one arrives.
+- The **window** is the set of frames kept around the playhead: `capacity − 1` frames (one slot
+  reserved for the reference), one third behind and two thirds ahead (matching the eviction
+  metric), shifted inwards at the ends of the video; the whole video if it fits.
+- Decoding happens in **runs**: a worker (one ffmpeg process) starts at a missing frame and streams
+  forward until the run reaches a cached frame, leaves the window, is rejected by the cache, or is
+  preempted. Runs never extend outside the window.
+- Run start priority: current frame, its reference, forward from the playhead to the window end,
+  then backward to the window start. Frames within 48 frames ahead of another worker's position are
+  left to that worker.
+- On a focus change, runs outside the new window are preempted; if the needed frames are not being
+  decoded and every worker is busy, the run furthest from the playhead is preempted.
+- Frames the decoder could not produce (e.g. the video is shorter than probed) are remembered and
+  skipped. After a rejected insert the workers stall until the focus changes.
 
-### 4.3 Processing
+### 4.3 Processing (`engine::session`)
 
-- Processed output frames are computed on demand from cached source frames (`core::process`,
-  parallelised with `rayon`). At preview resolution this takes a few milliseconds.
-- A small LRU of processed frames keyed by `(frame, params revision, view)` avoids recomputation
-  when stepping back and forth with unchanged parameters.
+- `Session::view(t, view, wait, abort)` points cache and prefetcher at `t`, waits for the source
+  frames, and computes the output with `core::process_prepared` at preview resolution.
+- LRUs: processed images keyed by `(frame, view, rev)` (24 entries) and denoised `Prepared` frames
+  keyed by `(frame, denoise)` (8 entries).
+- `approximate_view` processes the nearest cached frame as a stand-in.
+- `full_frame` decodes the frame (and its reference) at native resolution, bypassing the cache.
 
 ### 4.4 Render path
 
@@ -396,7 +422,9 @@ losslessly so pixel values are exact).
 
 | Level | Tooling | Scope |
 |---|---|---|
-| Unit (Rust) | `cargo test`, `proptest` | `core` effect math with synthetic frames (e.g. identical frames → black, known diff → known mask, resolution independence of blur/bloom), cache eviction policy, scheduler, ffmpeg argument building, WS header encoding |
+| Unit (Rust) | `cargo test`, `proptest` | `core` effect math with synthetic frames (e.g. identical frames → black, known diff → known mask, resolution independence of blur/bloom), cache eviction policy, prefetch window/priority, settings, ffmpeg argument building, WS header encoding, auth parsing, JSON merge patch |
+| Session (Rust) | `crates/engine/tests/session.rs` | open, views, parameter changes, approximations, settings reopen, render jobs incl. cancel, prefetch window behaviour |
+| API (Rust) | `crates/server/tests/api.rs` (reqwest, tokio-tungstenite) | every endpoint, path restrictions, token/Host/Origin checks, WebSocket latest-wins frames and events |
 | Integration (Rust) | `cargo test` with real ffmpeg | probe, decode, frame-accurate seeking (MP4, MKV, MPEG-TS; 25/29.97/30 fps), every codec, render pipeline (`crates/engine/tests`): render fixture → decode output → assert motion pixels where the square moved and black elsewhere; ring vs. dual decoder equivalence; cancellation |
 | CLI (Rust) | `crates/app/tests/cli.rs` runs the built binary | every `render` option, presets, overwrite protection, error reporting |
 | Unit (web) | Vitest | stores, unit conversion (frames ↔ seconds), WS protocol parsing |
@@ -453,7 +481,8 @@ npm --prefix e2e ci && npx --prefix e2e playwright test # E2E (starts the server
 
 - [x] M1 — `core` effect pipeline + `media` + `render`/`probe` CLI, with unit/integration tests
   (incl. classic mode and presets)
-- [ ] M2 — `engine` (cache, prefetch, processing) + `server` API + WebSocket frames
+- [x] M2 — `engine` (cache, prefetch, processing, settings, render jobs) + `server` API + WebSocket
+  frames + `serve` command
 - [ ] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs
 - [ ] M4 — Playwright E2E suite covering §2 completely
 - [ ] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke tests

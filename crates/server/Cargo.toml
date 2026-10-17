@@ -1,0 +1,32 @@
+[package]
+name = "mx-server"
+description = "HTTP + WebSocket API and embedded web UI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+jpeg-encoder = "0.6"
+mime_guess = "2"
+mx-core.workspace = true
+mx-engine.workspace = true
+mx-media.workspace = true
+png = "0.17"
+rust-embed = "8"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+mx-media = { workspace = true, features = ["testing"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+tempfile.workspace = true
+tokio-tungstenite = "0.26"
+
+[lints]
+workspace = true

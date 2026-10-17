@@ -28,6 +28,8 @@ enum Command {
     Probe { input: PathBuf },
     /// Render the motion extraction of a video to a file.
     Render(Box<RenderArgs>),
+    /// Serve the web UI without a window (open the printed URL in a browser).
+    Serve(crate::serve::ServeArgs),
 }
 
 #[derive(Debug, Args)]
@@ -168,8 +170,12 @@ struct OutputArgs {
 
 impl Cli {
     pub fn run(self) -> Result<()> {
+        if let Command::Serve(args) = self.command {
+            return crate::serve::run(args);
+        }
         let ff = Ffmpeg::locate()?;
         match self.command {
+            Command::Serve(_) => unreachable!("handled above"),
             Command::Probe { input } => {
                 let info = ff.probe(&input)?;
                 println!("{}", serde_json::to_string_pretty(&info)?);
@@ -324,18 +330,7 @@ fn set<T>(target: &mut T, value: Option<T>) {
 
 /// Refuses to overwrite an existing output (or a non-empty PNG directory) without `-y`.
 fn check_output(path: &Path, overwrite: bool) -> Result<()> {
-    if overwrite {
-        return Ok(());
-    }
-    let pattern = path.to_string_lossy().contains('%');
-    let occupied = if pattern {
-        path.parent()
-            .and_then(|d| std::fs::read_dir(d).ok())
-            .is_some_and(|mut entries| entries.next().is_some())
-    } else {
-        path.exists()
-    };
-    if occupied {
+    if !overwrite && mx_engine::output_occupied(path) {
         bail!("{} already exists (use -y to overwrite)", path.display());
     }
     Ok(())

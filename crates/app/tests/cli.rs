@@ -256,3 +256,52 @@ fn reports_errors() {
     );
     assert!(!out.exists());
 }
+
+/// Minimal HTTP GET (keeps the test free of an HTTP client dependency).
+fn http_get(addr: &str, path: &str) -> String {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(addr).unwrap();
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    response
+}
+
+#[test]
+fn serve_prints_url_and_answers() {
+    use std::io::{BufRead, BufReader};
+    let (dir, input) = setup(MovingSquare::default());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_motion-extractor"))
+        .args([
+            "serve",
+            "--port",
+            "0",
+            "--root",
+            s(dir.path()),
+            "--settings",
+            s(&dir.path().join("settings.json")),
+            s(&input),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let url = line.trim().rsplit(' ').next().unwrap().to_owned();
+    assert!(url.starts_with("http://127.0.0.1:"), "{line}");
+    let addr = url.trim_start_matches("http://").trim_end_matches('/');
+    let session = http_get(addr, "/api/session");
+    assert!(session.starts_with("HTTP/1.1 200"), "{session}");
+    assert!(
+        session.contains("\"frame_count\":30"),
+        "video opened at startup: {session}"
+    );
+    child.kill().unwrap();
+    child.wait().unwrap();
+}

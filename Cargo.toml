@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/media", "crates/engine", "crates/app"]
+members = ["crates/core", "crates/media", "crates/engine", "crates/server", "crates/app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,7 @@ rust-version = "1.85"
 mx-core = { path = "crates/core" }
 mx-media = { path = "crates/media" }
 mx-engine = { path = "crates/engine" }
+mx-server = { path = "crates/server" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"
