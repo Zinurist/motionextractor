@@ -295,3 +295,28 @@ fn encode_errors_are_reported() {
         Err(MediaError::InvalidOption(_))
     ));
 }
+
+#[test]
+fn extracts_audio_as_wav() {
+    let ff = ffmpeg();
+    let dir = tempfile::tempdir().unwrap();
+    let video = MovingSquare {
+        audio: true,
+        ..Default::default()
+    }
+    .generate(&ff, dir.path());
+    let wav = dir.path().join("audio.wav");
+    ff.extract_audio_wav(&video, &wav).unwrap();
+    let bytes = std::fs::read(&wav).unwrap();
+    assert_eq!(&bytes[..4], b"RIFF");
+    assert_eq!(&bytes[8..12], b"WAVE");
+    // 16-bit stereo at 48 kHz: 192000 bytes per second, the fixture audio lasts about 2 s.
+    assert!(bytes.len() > 150_000, "{} bytes", bytes.len());
+
+    let silent = MovingSquare::default().generate(&ff, dir.path());
+    let err = ff
+        .extract_audio_wav(&silent, &dir.path().join("none.wav"))
+        .unwrap_err();
+    assert!(matches!(err, MediaError::Ffmpeg { .. }), "{err:?}");
+    assert!(!dir.path().join("none.wav").exists());
+}

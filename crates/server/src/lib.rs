@@ -92,6 +92,7 @@ fn router(state: Shared) -> Router {
         )
         .route("/render/command", post(api::render_command))
         .route("/frame/{index}", get(api::frame))
+        .route("/audio", get(api::audio))
         .route("/fs/list", get(files::list))
         .route("/dialog/{kind}", post(api::dialog))
         .route("/ws", get(ws::upgrade));

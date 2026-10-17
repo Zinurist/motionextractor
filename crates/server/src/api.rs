@@ -318,6 +318,23 @@ pub async fn frame(
     Ok(([(header::CONTENT_TYPE, "image/png")], image).into_response())
 }
 
+/// The opened video's audio as WAV (with HTTP range support, so players can seek).
+pub async fn audio(
+    State(st): State<Shared>,
+    req: axum::extract::Request,
+) -> Result<Response, ApiError> {
+    use tower::ServiceExt;
+    let session = st.session.clone();
+    let file = blocking(move || Ok(session.audio_file()?))
+        .await?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "the video has no audio".into()))?;
+    let resp = tower_http::services::ServeFile::new(file)
+        .oneshot(req)
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(resp.into_response())
+}
+
 #[derive(Deserialize, Default)]
 pub struct DialogBody {
     #[serde(default)]

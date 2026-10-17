@@ -248,7 +248,9 @@
           style:left="{rects[0].x + rects[0].w * split}px"
         ></div>
       {/if}
-      {#if showLoading}
+      {#if store.buffering}
+        <div class="badge" data-testid="viewer-buffering">Buffering…</div>
+      {:else if showLoading}
         <div class="badge" data-testid="viewer-loading">Loading…</div>
       {/if}
     {/if}

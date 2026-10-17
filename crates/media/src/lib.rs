@@ -1,5 +1,6 @@
 //! ffmpeg / ffprobe integration via external processes.
 
+mod audio;
 mod decode;
 mod encode;
 mod probe;

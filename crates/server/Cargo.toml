@@ -21,6 +21,8 @@ rust-embed = "8"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 tracing.workspace = true
 

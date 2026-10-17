@@ -59,6 +59,18 @@ pub(crate) fn next_missing(
         .find(|&i| !skip(i))
 }
 
+/// What the prefetcher reports to its owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefetchEvent {
+    /// A frame was added to the cache.
+    Inserted,
+    /// A decoder run finished.
+    RunEnded,
+    /// The decoded stream ended at this frame count, before the probed count: the video is
+    /// shorter than ffprobe estimated.
+    StreamEnded(u64),
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Run {
     next: u64,
@@ -72,6 +84,8 @@ struct State {
     runs: Vec<Option<Run>>,
     /// Frames that could not be decoded (e.g. past the real end of the video).
     failed: HashSet<u64>,
+    /// Frame count: the probed one, lowered if the stream turns out to end earlier.
+    count: u64,
     /// Decoder failures per frame, for retries.
     errors: HashMap<u64, u32>,
     /// Incremented on every focus change.
@@ -90,7 +104,7 @@ struct Shared {
     size: (u32, u32),
     hwaccel: bool,
     generation: u64,
-    on_insert: Arc<dyn Fn(bool) + Send + Sync>,
+    on_event: Arc<dyn Fn(PrefetchEvent) + Send + Sync>,
 }
 
 impl Shared {
@@ -100,7 +114,7 @@ impl Shared {
 
     fn window(&self, s: &State) -> (u64, u64) {
         let reserved = u64::from(s.r.is_some());
-        window(s.t, self.info.frame_count, self.cache.capacity(), reserved)
+        window(s.t, s.count, self.cache.capacity(), reserved)
     }
 
     fn claimed_by_other(&self, s: &State, me: usize, i: u64) -> bool {
@@ -120,8 +134,7 @@ pub struct Prefetcher {
 }
 
 impl Prefetcher {
-    /// Starts `workers` decoder threads. `on_insert` is called after every inserted frame (`false`)
-    /// and when a run ends (`true`).
+    /// Starts `workers` decoder threads; `on_event` receives their progress.
     pub fn new(
         ff: Ffmpeg,
         info: VideoInfo,
@@ -129,7 +142,7 @@ impl Prefetcher {
         cache: Arc<FrameCache>,
         workers: usize,
         hwaccel: bool,
-        on_insert: Arc<dyn Fn(bool) + Send + Sync>,
+        on_event: Arc<dyn Fn(PrefetchEvent) + Send + Sync>,
     ) -> Self {
         let workers = workers.max(1);
         let shared = Arc::new(Shared {
@@ -139,6 +152,7 @@ impl Prefetcher {
                 runs: vec![None; workers],
                 failed: HashSet::new(),
                 errors: HashMap::new(),
+                count: info.frame_count,
                 focus_version: 0,
                 stalled_at: None,
                 shutdown: false,
@@ -150,7 +164,7 @@ impl Prefetcher {
             info,
             size,
             hwaccel,
-            on_insert,
+            on_event,
         });
         for w in 0..workers {
             let shared = shared.clone();
@@ -262,7 +276,7 @@ fn worker(sh: &Shared, me: usize) {
         decode_run(sh, me, start, len);
         sh.lock().runs[me] = None;
         sh.wake.notify_all();
-        (sh.on_insert)(true);
+        (sh.on_event)(PrefetchEvent::RunEnded);
     }
 }
 
@@ -300,7 +314,7 @@ fn decode_run(sh: &Shared, me: usize, start: u64, len: u64) {
             }
         };
         match sh.cache.insert(sh.generation, i, Arc::new(frame)) {
-            Insert::Inserted => (sh.on_insert)(false),
+            Insert::Inserted => (sh.on_event)(PrefetchEvent::Inserted),
             Insert::Rejected => {
                 let mut s = sh.lock();
                 s.stalled_at = Some(s.focus_version);
@@ -321,7 +335,11 @@ fn decode_run(sh: &Shared, me: usize, start: u64, len: u64) {
     }
     if i < start + len {
         // The stream ended early: these frames do not exist.
-        mark_failed(sh, i..start + len);
+        let mut s = sh.lock();
+        s.count = s.count.min(i);
+        s.failed.extend(i..start + len);
+        drop(s);
+        (sh.on_event)(PrefetchEvent::StreamEnded(i));
     }
 }
 

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::FrameCache;
 use crate::lru::Lru;
-use crate::prefetch::Prefetcher;
+use crate::prefetch::{PrefetchEvent, Prefetcher};
 use crate::render::{RenderError, RenderSpec, output_occupied};
 use crate::settings::{Settings, SettingsError};
 use crate::{Preset, plan, render};
@@ -90,6 +90,10 @@ pub enum Event {
     Opened {
         video: VideoState,
     },
+    /// The opened video's properties changed (it turned out to have fewer frames than probed).
+    Video {
+        video: VideoState,
+    },
     Preset {
         preset: Preset,
         rev: u64,
@@ -160,7 +164,22 @@ pub struct Session {
     job: Mutex<Option<Job>>,
     next_job_id: AtomicU64,
     last_cache_event: Mutex<Option<Instant>>,
+    /// Extracted audio of the opened video for playback in the UI (a temporary WAV file).
+    audio: Mutex<Option<AudioFile>>,
     events: EventSink,
+}
+
+struct AudioFile {
+    video: PathBuf,
+    file: PathBuf,
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        if let Some(a) = lock(&self.audio).take() {
+            let _ = std::fs::remove_file(a.file);
+        }
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -192,6 +211,7 @@ impl Session {
             processed: Mutex::new(Lru::new(24)),
             prepared: Mutex::new(Lru::new(8)),
             job: Mutex::new(None),
+            audio: Mutex::new(None),
             next_job_id: AtomicU64::new(1),
             last_cache_event: Mutex::new(None),
             events,
@@ -238,6 +258,9 @@ impl Session {
             h => info.scaled_size(h),
         };
         let mut state = lock(&self.state);
+        if let Some(a) = lock(&self.audio).take() {
+            let _ = std::fs::remove_file(a.file);
+        }
         // Stop the old workers before resetting the cache.
         state.video = None;
         self.cache.reset(Frame::byte_len(pw, ph));
@@ -251,9 +274,13 @@ impl Session {
             self.cache.clone(),
             settings.decode_workers as usize,
             settings.hwaccel,
-            Arc::new(move |force| {
+            Arc::new(move |event| {
                 if let Some(s) = me.upgrade() {
-                    s.emit_cache(force);
+                    match event {
+                        PrefetchEvent::Inserted => s.emit_cache(false),
+                        PrefetchEvent::RunEnded => s.emit_cache(true),
+                        PrefetchEvent::StreamEnded(count) => s.shorten_video(count),
+                    }
                 }
             }),
         );
@@ -282,6 +309,59 @@ impl Session {
         }
         self.emit_cache(true);
         Ok(video)
+    }
+
+    /// The audio of the opened video as a WAV file for playback, extracted on first use; `None` if
+    /// the video has no audio.
+    pub fn audio_file(&self) -> Result<Option<PathBuf>, SessionError> {
+        let info = self.video().ok_or(SessionError::NoVideo)?.info;
+        if !info.has_audio {
+            return Ok(None);
+        }
+        // Holding the lock while extracting makes concurrent requests wait for the same file.
+        let mut audio = lock(&self.audio);
+        if let Some(a) = audio
+            .as_ref()
+            .filter(|a| a.video == info.path && a.file.exists())
+        {
+            return Ok(Some(a.file.clone()));
+        }
+        let file = std::env::temp_dir().join(format!(
+            "motion-extractor-{}-{}.wav",
+            std::process::id(),
+            self.cache.generation()
+        ));
+        self.ff.extract_audio_wav(&info.path, &file)?;
+        if let Some(old) = audio.replace(AudioFile {
+            video: info.path,
+            file: file.clone(),
+        }) {
+            if old.file != file {
+                let _ = std::fs::remove_file(old.file);
+            }
+        }
+        Ok(Some(file))
+    }
+
+    /// The decoded stream ended after `count` frames, earlier than probed: correct the frame count.
+    fn shorten_video(&self, count: u64) {
+        let video = {
+            let mut s = lock(&self.state);
+            let Some(v) = s.video.as_mut() else { return };
+            let info = &mut v.state.info;
+            if count == 0 || count >= info.frame_count {
+                return;
+            }
+            tracing::info!(
+                "{} has {count} frames, not {}",
+                info.path.display(),
+                info.frame_count
+            );
+            info.frame_count = count;
+            info.duration = count as f64 / info.fps_f64();
+            v.state.clone()
+        };
+        (self.events)(Event::Video { video });
     }
 
     /// Shows an error message in every connected UI.

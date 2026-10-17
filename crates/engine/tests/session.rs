@@ -272,7 +272,7 @@ fn prefetcher_keeps_window_around_playhead() {
         cache.clone(),
         2,
         false,
-        Arc::new(|_| {}),
+        Arc::new(|_: mx_engine::PrefetchEvent| {}),
     );
     cache.set_focus(40, &[40]);
     prefetch.set_focus(40, None);
@@ -314,4 +314,56 @@ fn opening_a_video_clears_the_trim() {
             .iter()
             .any(|e| matches!(e, Event::Preset { preset, .. } if preset.render.start.is_none()))
     );
+}
+
+#[test]
+fn audio_for_playback() {
+    let f = fixture(MovingSquare {
+        audio: true,
+        ..Default::default()
+    });
+    let file = f.session.audio_file().unwrap().expect("video has audio");
+    assert_eq!(&std::fs::read(&file).unwrap()[8..12], b"WAVE");
+    // Cached: the same file again.
+    assert_eq!(f.session.audio_file().unwrap(), Some(file.clone()));
+    // Opening another video removes it.
+    let silent = MovingSquare::default().generate(&ffmpeg(), f.dir.path());
+    f.session.open(&silent).unwrap();
+    assert!(!file.exists());
+    assert_eq!(f.session.audio_file().unwrap(), None);
+    drop(f.session);
+}
+
+#[test]
+fn prefetcher_reports_streams_shorter_than_probed() {
+    let dir = tempfile::tempdir().unwrap();
+    let ff = ffmpeg();
+    let mut info = ff
+        .probe(&MovingSquare::default().generate(&ff, dir.path()))
+        .unwrap();
+    // Pretend ffprobe overestimated the length.
+    info.frame_count = 40;
+    let frame_bytes = mx_core::Frame::byte_len(info.width, info.height);
+    let cache = Arc::new(FrameCache::new(frame_bytes * 100));
+    cache.reset(frame_bytes);
+    let ended = Arc::new(Mutex::new(None));
+    let sink = ended.clone();
+    let prefetch = mx_engine::Prefetcher::new(
+        ff,
+        info.clone(),
+        (info.width, info.height),
+        cache.clone(),
+        1,
+        false,
+        Arc::new(move |e| {
+            if let mx_engine::PrefetchEvent::StreamEnded(n) = e {
+                *sink.lock().unwrap() = Some(n);
+            }
+        }),
+    );
+    prefetch.set_focus(0, None);
+    wait_until("end of stream", || ended.lock().unwrap().is_some());
+    assert_eq!(*ended.lock().unwrap(), Some(30));
+    wait_until("idle", || !prefetch.is_busy());
+    assert_eq!(cache.ranges(), vec![(0, 30)]);
 }

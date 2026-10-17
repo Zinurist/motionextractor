@@ -119,7 +119,15 @@ Optional, lower priority:
 - Zoom (fit / 100% / mouse-wheel) and pan.
 - **Preview resolution** setting (e.g. 360p / 540p / 720p / 1080p / native, default 540p).
 - The timeline visualises which frames are currently cached (like video editors do).
-- Playback at the video's frame rate; frames are dropped (not slowed) if the pipeline can't keep up.
+- Playback at the video's frame rate, **with the video's audio** (mute toggle, remembered per
+  browser). The clock follows the audio while it plays (wall clock without audio, or after the
+  audio ends). Scrubbing is silent.
+- **Buffering instead of freezing**: if the shown frame trails the playhead by more than 3 frames
+  (decoding or processing can't keep up), playback pauses the clock and the audio and shows
+  "Buffering…" until the current frame is shown and the next second of frames (bounded by the trim
+  end and half the cache capacity) is decoded, then continues.
+- Transport icons follow media conventions: ⏮/⏭ jump to the trim bounds, |◀/▶| step one frame,
+  ▶ plays.
 
 See [§4 Preview engine](#4-preview-engine) for how this is made fast.
 
@@ -350,6 +358,7 @@ root).
 | `DELETE /api/render` | Cancel → `{cancelled}` |
 | `POST /api/render/command` `{output}` | ffmpeg command the render would run → `{command}` |
 | `GET /api/frame/{i}?view=output\|original&full=false` | Frame as PNG (preview cache, or decoded at full resolution) |
+| `GET /api/audio` | The video's audio as WAV (16-bit stereo 48 kHz, HTTP range requests supported); 404 without audio |
 | `GET /api/fs/list?path=` | Directory listing `{path, parent, entries: [{name, path, dir, size}]}` (hidden files skipped) |
 | `POST /api/dialog/{open-video\|save-video\|open-preset\|save-preset}` | Native dialog (desktop) → `{path}` |
 | `WS /api/ws` | Frame requests/responses and server events |
@@ -369,7 +378,8 @@ parameters change (render options do not change it).
   15 ms, a stand-in (nearest cached frame, flag *exact* unset) is sent first, then the exact frame.
 - Raw RGB on loopback connections; JPEG for remote clients. Lossy encoding is only ever applied
   *after* the effect, never to source frames (compression artifacts would show up as false motion).
-- Server events (text): `{"type":"opened","video":…}`, `{"type":"preset","preset":…,"rev":n}`,
+- Server events (text): `{"type":"opened","video":…}`, `{"type":"video","video":…}` (the video
+  has fewer frames than probed; clients keep their playhead), `{"type":"preset","preset":…,"rev":n}`,
   `{"type":"cache","cache":{ranges,capacity,cached,decoding}}` (≤ 5/s), `{"type":"render","job":…}`
   (≤ 4/s plus final state), `{"type":"settings","settings":…}`, `{"type":"error","message":…}`.
 
@@ -389,6 +399,9 @@ parameters change (render options do not change it).
 - Parameter edits apply locally at once and are sent as JSON merge patches; while one request is
   in flight further edits are coalesced into the next. `preset` events from the server are adopted
   only if they differ from what this client last sent (other clients, preset loads).
+- Playback (`play`, `tick`, `startClock`, `clockFrame` in the store) uses the pure helpers in
+  `src/lib/playback.ts` (`isCached`, `bufferEnd`, `lagging`; unit-tested). An `Audio` element per
+  opened video loads `/api/audio?v=<n>`; if it cannot play, playback continues silently.
 - Render job updates from the start request and from events are applied in order: an update older
   than the shown state (same job id, terminal → running) is ignored.
 - Frames: the store requests the views the current mode needs (`output`, `original` or both) on
@@ -457,6 +470,13 @@ effect at preview resolution).
   keyed by `(frame, denoise)` (8 entries).
 - `approximate_view` processes the nearest cached frame as a stand-in.
 - `full_frame` decodes the frame (and its reference) at native resolution, bypassing the cache.
+- `audio_file` extracts the audio once per opened video into a temporary WAV
+  (`<temp>/motion-extractor-<pid>-<generation>.wav`, via `Ffmpeg::extract_audio_wav`), removed when
+  another video is opened or the session is dropped. WAV because every webview can decode it
+  (WebKitGTK without extra GStreamer plugins).
+- When a decoder run hits the end of the stream before the probed frame count, the prefetcher
+  reports `PrefetchEvent::StreamEnded(n)`; the session lowers the frame count (and duration) and
+  sends a `video` event, so playback and renders do not wait for frames that do not exist.
 
 ### 4.4 Render path
 
@@ -503,7 +523,8 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 | Feature (§2) | E2E spec |
 |---|---|
 | Open via file browser, navigation, non-video errors, connection state | `open.spec.ts` |
-| Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill, no loading-badge flicker during playback | `playback.spec.ts` |
+| Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill, no loading-badge flicker during playback, buffering when decoding is slower than playback (ffmpeg throttled by `tests/support/slow-ffmpeg.mjs`) | `playback.spec.ts` |
+| Audio playback along with the video, mute (remembered), no mute button without audio | `audio.spec.ts` |
 | Rolling offset (frames/seconds, unit switch, negative, zero rejected), fixed reference | `comparison.spec.ts` |
 | Threshold/gain/gamma, color picker, bloom, overlay (brightness, opacity), classic mode, metric, denoise, slider reset buttons | `effect.spec.ts` |
 | Original/split/side-by-side views, split handle, zoom/pan/fit | `views.spec.ts` |
@@ -593,6 +614,7 @@ tag `vX.Y.Z`, push the tag, review and publish the draft release.
 - [x] M6 — GitHub Actions CI + release pipeline with installers, rolling nightly builds, mise tasks
   (workflows not yet run on GitHub)
 - [x] Trim on the timeline, slider reset buttons
+- [x] Audio playback, buffering instead of freezing, corrected frame counts for short streams
 - [ ] Later — alpha output, Flatpak, presets library, faster bloom compositing
 
 ## 10. Licensing

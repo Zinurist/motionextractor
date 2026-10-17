@@ -3,6 +3,7 @@ import { deepMerge } from './merge';
 import type { FrameMessage } from './protocol';
 import { FORMAT_RGB } from './protocol';
 import { Socket } from './socket';
+import { bufferEnd, isCached, lagging } from './playback';
 import { clamp, fpsValue } from './time';
 import {
   defaultPreset,
@@ -34,6 +35,16 @@ export interface Toast {
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
+const MUTED_KEY = 'mx-muted';
+
+function loadMuted(): boolean {
+  try {
+    return localStorage.getItem(MUTED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 class AppStore {
   info = $state<Info | null>(null);
   video = $state<VideoState | null>(null);
@@ -45,6 +56,9 @@ class AppStore {
   connected = $state(false);
   frame = $state(0);
   playing = $state(false);
+  /** Playing, but waiting for frames to be decoded (the clock and the audio are paused). */
+  buffering = $state(false);
+  muted = $state(loadMuted());
   viewMode = $state<ViewMode>('output');
   shown = $state<Record<View, Shown | null>>({ output: null, original: null });
   toasts = $state<Toast[]>([]);
@@ -57,7 +71,15 @@ class AppStore {
   private patching = false;
   private lastSent = '';
   private toastId = 0;
-  private playStart = { time: 0, frame: 0 };
+  /** Wall-clock anchor of the playback clock (used when there is no audio to follow). */
+  private clock = { time: 0, frame: 0 };
+  private audio: HTMLAudioElement | null = null;
+  private audioPath: string | null = null;
+  private audioGeneration = 0;
+  /** The audio could not be played (e.g. no decoder): fall back to the wall clock. */
+  private audioFailed = false;
+  /** Whether the running clock follows the audio (false after the audio has ended). */
+  private followAudio = false;
 
   get fps(): number {
     return this.video ? fpsValue(this.video.info.fps) : 30;
@@ -107,18 +129,41 @@ class AppStore {
     this.settings = s.settings;
     this.lastSent = JSON.stringify(s.preset);
     this.frame = clamp(this.frame, 0, Math.max(0, this.frameCount - 1));
+    this.setupAudio();
     this.requestViews();
+  }
+
+  /** Prepares an audio element for the opened video (if it has audio). */
+  private setupAudio(): void {
+    const path = this.video?.info.has_audio ? this.video.info.path : null;
+    if (path === this.audioPath && (this.audio || !path)) return;
+    this.audio?.pause();
+    this.audio = null;
+    this.audioPath = path;
+    this.audioFailed = false;
+    if (!path || typeof Audio === 'undefined') return;
+    // A new URL per opened video, so the browser never plays a cached file of another video.
+    const audio = new Audio(`/api/audio?v=${++this.audioGeneration}`);
+    audio.preload = 'auto';
+    audio.muted = this.muted;
+    this.audio = audio;
   }
 
   private handleEvent(e: ServerEvent): void {
     switch (e.type) {
       case 'opened':
         this.video = e.video;
+        this.setupAudio();
         this.frames = { output: null, original: null };
         this.shown = { output: null, original: null };
         this.pause();
         this.frame = 0;
         this.requestViews();
+        break;
+      case 'video':
+        // The video turned out shorter than probed: keep the playhead, within the new length.
+        this.video = e.video;
+        this.frame = clamp(this.frame, 0, Math.max(0, this.frameCount - 1));
         break;
       case 'preset': {
         const json = JSON.stringify(e.preset);
@@ -220,31 +265,118 @@ class AppStore {
     this.setFrame(this.trim.end - 1);
   }
 
-  /** Plays the trimmed part from the playhead (or from its start) and stops at its end. */
+  /**
+   * Plays the trimmed part from the playhead (or from its start) and stops at its end. The clock
+   * follows the audio when there is any. When the image falls behind (frames not decoded in time),
+   * playback pauses ("buffering") until a second of frames is ready instead of skipping ahead.
+   */
   play(): void {
     if (!this.video || this.playing) return;
     const { start, end } = this.trim;
     if (this.frame < start || this.frame >= end - 1) this.setFrame(start);
     this.playing = true;
-    this.playStart = { time: performance.now(), frame: this.frame };
-    const tick = () => {
-      if (!this.playing) return;
-      const last = this.trim.end - 1;
-      const elapsed = (performance.now() - this.playStart.time) / 1000;
-      const target = this.playStart.frame + Math.floor(elapsed * this.fps);
+    this.buffering = !this.bufferReady();
+    if (!this.buffering) this.startClock();
+    requestAnimationFrame(this.tick);
+  }
+
+  private tick = (): void => {
+    if (!this.playing) return;
+    const last = this.trim.end - 1;
+    if (this.buffering) {
+      if (this.bufferReady()) {
+        this.buffering = false;
+        this.startClock();
+      }
+    } else {
+      const target = Math.max(this.frame, this.clockFrame());
       if (target >= last) {
         this.setFrame(last);
-        this.playing = false;
+        this.pause();
         return;
       }
       this.setFrame(target);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+      if (lagging(this.frame, this.shown[this.mainView])) {
+        this.buffering = true;
+        this.audio?.pause();
+      }
+    }
+    requestAnimationFrame(this.tick);
+  };
+
+  /** The view whose frames decide whether playback keeps up. */
+  private get mainView(): View {
+    return this.viewMode === 'original' ? 'original' : 'output';
+  }
+
+  /** Whether the current frame is shown and the next second of frames is decoded. */
+  private bufferReady(): boolean {
+    const shown = this.shown[this.mainView];
+    if (!shown || !shown.exact || shown.index !== this.frame) return false;
+    const end = bufferEnd(this.frame, this.trim.end, this.fps, this.cache.capacity);
+    return isCached(this.cache.ranges, this.frame, end);
+  }
+
+  /** (Re)starts the clock at the current frame. */
+  private startClock(): void {
+    this.clock = { time: performance.now(), frame: this.frame };
+    const audio = this.audio;
+    const duration = audio && isFinite(audio.duration) ? audio.duration : Infinity;
+    // Follow the audio unless there is none (left) at this position.
+    this.followAudio = !!audio && !this.audioFailed && this.frame / this.fps < duration;
+    if (!audio || !this.followAudio) return;
+    audio.currentTime = this.frame / this.fps;
+    audio.play().catch(() => {
+      // No playable audio: keep playing silently on the wall clock.
+      this.audioFailed = true;
+      this.followAudio = false;
+      this.clock = { time: performance.now(), frame: this.frame };
+    });
+  }
+
+  /** The frame the clock is at. */
+  private clockFrame(): number {
+    const audio = this.audio;
+    if (this.followAudio && audio) {
+      if (audio.ended) {
+        // The audio is shorter than the video: continue on the wall clock.
+        this.followAudio = false;
+        this.clock = { time: performance.now(), frame: this.frame };
+      } else if (audio.paused) {
+        // Until the audio actually runs, hold the current frame.
+        return this.frame;
+      } else {
+        return Math.floor(audio.currentTime * this.fps + 1e-6);
+      }
+    }
+    const elapsed = (performance.now() - this.clock.time) / 1000;
+    return this.clock.frame + Math.floor(elapsed * this.fps);
   }
 
   pause(): void {
     this.playing = false;
+    this.buffering = false;
+    this.audio?.pause();
+  }
+
+  toggleMute(): void {
+    this.muted = !this.muted;
+    if (this.audio) this.audio.muted = this.muted;
+    try {
+      localStorage.setItem(MUTED_KEY, this.muted ? '1' : '0');
+    } catch {
+      // Storage may be unavailable; muting still works for this session.
+    }
+  }
+
+  get hasAudio(): boolean {
+    return !!this.video?.info.has_audio;
+  }
+
+  /** State of the audio player, for E2E tests. */
+  debugAudio(): { src: string; paused: boolean; muted: boolean; time: number } | null {
+    const a = this.audio;
+    return a ? { src: a.src, paused: a.paused, muted: a.muted, time: a.currentTime } : null;
   }
 
   togglePlay(): void {

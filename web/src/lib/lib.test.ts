@@ -107,3 +107,34 @@ describe('render job updates', () => {
     expect(store.job?.id).toBe(2);
   });
 });
+
+import { bufferEnd, isCached, lagging } from './playback';
+
+describe('playback', () => {
+  it('checks cached ranges', () => {
+    const ranges: [number, number][] = [
+      [0, 10],
+      [20, 30],
+    ];
+    expect(isCached(ranges, 2, 10)).toBe(true);
+    expect(isCached(ranges, 8, 12)).toBe(false);
+    expect(isCached(ranges, 20, 30)).toBe(true);
+    expect(isCached(ranges, 15, 15)).toBe(true);
+    expect(isCached([], 0, 1)).toBe(false);
+  });
+
+  it('buffers one second, bounded by the trim and the cache', () => {
+    expect(bufferEnd(10, 1000, 30, 1000)).toBe(40);
+    expect(bufferEnd(10, 25, 30, 1000)).toBe(25);
+    expect(bufferEnd(10, 1000, 30, 20)).toBe(20);
+    expect(bufferEnd(10, 1000, 30, 0)).toBe(11);
+  });
+
+  it('detects a lagging image', () => {
+    expect(lagging(10, { index: 10, exact: true })).toBe(false);
+    expect(lagging(13, { index: 10, exact: true })).toBe(false);
+    expect(lagging(14, { index: 10, exact: true })).toBe(true);
+    expect(lagging(10, { index: 8, exact: false })).toBe(true);
+    expect(lagging(10, null)).toBe(true);
+  });
+});

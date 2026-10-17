@@ -120,6 +120,16 @@
       data-testid="go-end"
       onclick={() => store.goEnd()}><Icon name="end" /></button
     >
+    {#if store.hasAudio}
+      <button
+        class="icon"
+        title={store.muted ? 'Unmute' : 'Mute'}
+        aria-pressed={store.muted}
+        data-testid="mute"
+        data-muted={store.muted}
+        onclick={() => store.toggleMute()}><Icon name={store.muted ? 'muted' : 'volume'} /></button
+      >
+    {/if}
     <span class="time mono" data-testid="time">
       {formatTime(store.frame / store.fps)} / {formatTime(count / store.fps)}
     </span>

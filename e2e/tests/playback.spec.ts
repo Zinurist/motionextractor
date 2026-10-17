@@ -1,4 +1,10 @@
-import { expect, expectFrame, test } from './fixtures';
+import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { expect, expectFrame, makeSquareVideo, startServer, test } from './fixtures';
+
+const SLOW_FFMPEG = join(dirname(fileURLToPath(import.meta.url)), 'support', 'slow-ffmpeg.mjs');
 
 test('scrubs with the timeline', async ({ app }) => {
   const track = app.getByTestId('timeline');
@@ -83,4 +89,63 @@ test('does not flash the loading badge while playing', async ({ app }) => {
   expect(await app.evaluate(() => (window as unknown as { badgeShown: number }).badgeShown)).toBe(
     0,
   );
+});
+
+test('waits for decoding instead of running ahead of the frames', async ({ browser }) => {
+  test.skip(process.platform === 'win32', 'the throttling ffmpeg wrapper is a shell script');
+  // Decoders deliver ~10 frames/s (160×120 RGB = 57.6 kB per frame), a third of the video's rate.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'mx-e2e-slow-')));
+  const shim = join(dir, 'slow-ffmpeg');
+  writeFileSync(shim, `#!/bin/sh\nexec node ${JSON.stringify(SLOW_FFMPEG)} "$@"\n`);
+  chmodSync(shim, 0o755);
+  const video = makeSquareVideo(join(dir, 'square.mkv'), { frames: 90 });
+  const server = await startServer(dir, video, {
+    MOTION_EXTRACTOR_FFMPEG: shim,
+    MX_REAL_FFMPEG: process.env.MOTION_EXTRACTOR_FFMPEG ?? 'ffmpeg',
+    MX_SLOW_BYTES_PER_SECOND: String(57_600 * 10),
+  });
+  try {
+    await server.api('PUT', '/api/settings', { decode_workers: 1 });
+    await server.api('POST', '/api/open', { path: video });
+    const page = await browser.newPage();
+    await page.goto(server.url + '/');
+    await expectFrame(page, 0);
+
+    // Sample the playhead against the shown frame on every animation frame while playing.
+    await page.evaluate(() => {
+      const w = window as unknown as { maxLag: number; buffered: boolean };
+      const s = window.mxDebug!.store as unknown as {
+        frame: number;
+        playing: boolean;
+        buffering: boolean;
+        shown: { output: { index: number } | null };
+      };
+      w.maxLag = 0;
+      w.buffered = false;
+      const sample = () => {
+        if (s.playing && !s.buffering && s.shown.output) {
+          w.maxLag = Math.max(w.maxLag, s.frame - s.shown.output.index);
+        }
+        if (s.buffering) w.buffered = true;
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await page.getByTestId('play').click();
+    await expect(page.getByTestId('viewer-buffering')).toBeVisible();
+    await expect(page.getByTestId('play')).toHaveAttribute('data-playing', 'false', {
+      timeout: 40_000,
+    });
+    await expectFrame(page, 89);
+    const { maxLag, buffered } = await page.evaluate(() => {
+      const w = window as unknown as { maxLag: number; buffered: boolean };
+      return { maxLag: w.maxLag, buffered: w.buffered };
+    });
+    expect(buffered).toBe(true);
+    // The image never falls more than a few frames behind the playhead.
+    expect(maxLag).toBeLessThanOrEqual(4);
+  } finally {
+    server.proc.kill();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

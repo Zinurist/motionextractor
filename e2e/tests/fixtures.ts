@@ -110,13 +110,19 @@ export interface Server {
   api<T = unknown>(method: string, path: string, body?: unknown): Promise<T>;
 }
 
-async function startServer(dir: string, video: string): Promise<Server> {
+/** Starts `motion-extractor serve` with `dir` as root (`env` is added to the environment). */
+export async function startServer(
+  dir: string,
+  video: string,
+  env: Record<string, string> = {},
+): Promise<Server> {
   if (!existsSync(BIN)) throw new Error(`binary not found: ${BIN} (run cargo build first)`);
   const proc = spawn(
     BIN,
     ['serve', '--port', '0', '--root', dir, '--settings', join(dir, 'settings.json')],
     {
       stdio: ['ignore', 'pipe', 'inherit'],
+      env: { ...process.env, ...env },
     },
   );
   const url = await new Promise<string>((ok, fail) => {

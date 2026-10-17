@@ -126,6 +126,7 @@ export interface Listing {
 
 export type ServerEvent =
   | { type: 'opened'; video: VideoState }
+  | { type: 'video'; video: VideoState }
   | { type: 'preset'; preset: Preset; rev: number }
   | { type: 'cache'; cache: CacheState }
   | { type: 'render'; job: JobStatus }

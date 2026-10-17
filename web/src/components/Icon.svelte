@@ -4,23 +4,34 @@
     name,
   }: {
     name:
-      'start' | 'prev' | 'play' | 'pause' | 'next' | 'end' | 'folder' | 'film' | 'file' | 'reset';
+      | 'start'
+      | 'prev'
+      | 'play'
+      | 'pause'
+      | 'next'
+      | 'end'
+      | 'folder'
+      | 'film'
+      | 'file'
+      | 'reset'
+      | 'volume'
+      | 'muted';
   } = $props();
 </script>
 
 <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
   {#if name === 'start'}
-    <rect x="2" y="3" width="2" height="10" /><path d="M14 3v10L5 8z" />
+    <rect x="1.5" y="3" width="2" height="10" /><path d="M9 3v10L3.5 8zM15 3v10L9.5 8z" />
   {:else if name === 'prev'}
-    <path d="M12 3v10L3 8z" />
+    <rect x="3" y="3.5" width="2" height="9" /><path d="M13 3.5v9L6 8z" />
   {:else if name === 'play'}
     <path d="M4 2.5v11L13.5 8z" />
   {:else if name === 'pause'}
     <rect x="3.5" y="3" width="3" height="10" /><rect x="9.5" y="3" width="3" height="10" />
   {:else if name === 'next'}
-    <path d="M4 3v10l9-5z" />
+    <rect x="11" y="3.5" width="2" height="9" /><path d="M3 3.5v9L10 8z" />
   {:else if name === 'end'}
-    <rect x="12" y="3" width="2" height="10" /><path d="M2 3v10l9-5z" />
+    <rect x="12.5" y="3" width="2" height="10" /><path d="M1 3v10l5.5-5zM7 3v10l5.5-5z" />
   {:else if name === 'reset'}
     <path
       d="M8 2.5a5.5 5.5 0 1 1-5.2 3.7"
@@ -30,6 +41,25 @@
       stroke-linecap="round"
     />
     <path d="M1.6 2.2 6 3.4 3 6.8z" />
+  {:else if name === 'volume' || name === 'muted'}
+    <path d="M2 6h3l4-3.5v11L5 10H2z" />
+    {#if name === 'volume'}
+      <path
+        d="M11 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.5 6.5 0 0 1 0 9"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+      />
+    {:else}
+      <path
+        d="M11 6l4 4M15 6l-4 4"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+      />
+    {/if}
   {:else if name === 'folder'}
     <path d="M1.5 3.5h5l1.5 1.5h6.5v8h-13z" />
   {:else if name === 'film'}

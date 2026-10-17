@@ -10,7 +10,7 @@ mod session;
 mod settings;
 
 pub use cache::{FrameCache, Insert};
-pub use prefetch::Prefetcher;
+pub use prefetch::{PrefetchEvent, Prefetcher};
 pub use preset::{Preset, PresetError};
 pub use render::{
     Progress, RenderError, RenderOptions, RenderPlan, RenderSpec, RenderTuning, output_occupied,

@@ -3,6 +3,8 @@
 Highlights the motion in a video by comparing each frame with an earlier one, based on Posy's
 [Motion Extraction](https://youtu.be/NSS6yAMZF78) video.
 
+![Motion Extractor showing the motion of a Game of Life video as glowing cyan over the dimmed original](docs/screenshot.png)
+
 ## Run
 
 Installers for Linux, Windows and macOS are attached to the GitHub releases; builds of the latest

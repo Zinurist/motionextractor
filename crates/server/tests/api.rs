@@ -406,3 +406,42 @@ async fn websocket_frames_and_events() {
         }
     }
 }
+
+#[tokio::test]
+async fn audio_for_playback() {
+    let s = start(None).await;
+    let (status, _) = s.get("/api/audio").await;
+    assert_eq!(status, StatusCode::CONFLICT, "no video yet");
+    let video = MovingSquare {
+        audio: true,
+        ..Default::default()
+    }
+    .generate(&ffmpeg(), s.dir.path());
+    let (status, _) = s.post("/api/open", json!({ "path": video })).await;
+    assert_eq!(status, StatusCode::OK);
+    let r = s
+        .http
+        .get(format!("{}/api/audio", s.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(r.headers()["content-type"], "audio/wav");
+    assert_eq!(r.headers()["accept-ranges"], "bytes");
+    let full = r.bytes().await.unwrap();
+    assert_eq!(&full[8..12], b"WAVE");
+    // Range requests let the player seek.
+    let r = s
+        .http
+        .get(format!("{}/api/audio", s.base))
+        .header("range", "bytes=100-199")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(&r.bytes().await.unwrap()[..], &full[100..200]);
+    // Videos without audio.
+    s.open().await;
+    let (status, body) = s.get("/api/audio").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+}
