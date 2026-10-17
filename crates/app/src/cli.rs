@@ -19,7 +19,12 @@ use crate::timespec::TimeSpec;
 )]
 pub struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
+    /// Video to open in the desktop app (when no subcommand is given).
+    file: Option<PathBuf>,
+    /// Open the window, wait for the UI to load, then exit (for CI).
+    #[arg(long, hide = true)]
+    smoke_test: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -169,12 +174,19 @@ struct OutputArgs {
 }
 
 impl Cli {
+    /// Whether a CLI subcommand was given (as opposed to starting the desktop app).
+    pub fn is_command(&self) -> bool {
+        self.command.is_some()
+    }
+
     pub fn run(self) -> Result<()> {
-        if let Command::Serve(args) = self.command {
-            return crate::serve::run(args);
-        }
+        let command = match self.command {
+            None => return desktop(self.file, self.smoke_test),
+            Some(Command::Serve(args)) => return crate::serve::run(args),
+            Some(c) => c,
+        };
         let ff = Ffmpeg::locate()?;
-        match self.command {
+        match command {
             Command::Serve(_) => unreachable!("handled above"),
             Command::Probe { input } => {
                 let info = ff.probe(&input)?;
@@ -184,6 +196,16 @@ impl Cli {
             Command::Render(args) => render(&ff, *args),
         }
     }
+}
+
+#[cfg(feature = "desktop")]
+fn desktop(file: Option<PathBuf>, smoke_test: bool) -> Result<()> {
+    crate::desktop::run(file, smoke_test)
+}
+
+#[cfg(not(feature = "desktop"))]
+fn desktop(_file: Option<PathBuf>, _smoke_test: bool) -> Result<()> {
+    bail!("this build has no desktop window; use `motion-extractor serve` (see --help)")
 }
 
 fn render(ff: &Ffmpeg, args: RenderArgs) -> Result<()> {

@@ -5,8 +5,8 @@
 > build/test commands or conventions must be reflected here in the same change.
 > Keep it free of anything specific to a particular developer machine — this is an open source project.
 
-Status: **M4 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
-server, web UI, E2E suite). Sections describe
+Status: **M5 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
+server, web UI, E2E suite, desktop app). Sections describe
 the target state; the [Roadmap](#9-roadmap) tracks what is implemented.
 
 ---
@@ -269,6 +269,26 @@ e2e/                       Playwright tests (+ fixture video generation)
 Building `app` without the `desktop` feature yields a headless binary (no webview dependencies) that
 supports `serve`, `render` and `probe`.
 
+### 3.2.1 Desktop shell (`crates/app/src/desktop.rs`, feature `desktop`)
+
+- `motion-extractor [FILE]` without a subcommand starts the desktop app: the server on
+  `127.0.0.1:<random port>` with a random token in desktop mode, then a Tauri window loading
+  `http://127.0.0.1:<port>/?token=…` (`WebviewUrl::External`; no Tauri IPC is used, the UI talks to
+  the server like any browser).
+- Native dialogs come from `tauri-plugin-dialog` (blocking calls from server worker threads; the
+  plugin runs them on the UI thread). Files dropped onto the window are opened via the session;
+  failures become an `error` event (toast).
+- `--smoke-test` (hidden) exits 0 as soon as the UI's JavaScript connects to the WebSocket
+  (`ServerConfig::on_connect`), 1 after 60 s — used by CI on every OS.
+- Windows: the binary uses the GUI subsystem (no console window); CLI subcommands attach to the
+  parent console (`AttachConsole`).
+- Configuration: `crates/app/tauri.conf.json` (identifier `io.github.motionextractor`, icons in
+  `crates/app/icons/` generated from `icon.svg` with `tauri icon`). Linux packages depend on the
+  system ffmpeg (`.deb`: `ffmpeg`, `.rpm`: `/usr/bin/ffmpeg`). `tauri.ffmpeg.conf.json` is a
+  config overlay used by release builds to bundle `binaries/ffmpeg` and `binaries/ffprobe` as
+  sidecars (placed next to the executable, where `Ffmpeg::locate` finds them).
+- Tauri CLI: `web/node_modules/.bin/tauri` (dev dependency of `web`); run it from `crates/app`.
+
 ### 3.3 ffmpeg integration
 
 - ffmpeg/ffprobe are used as **external processes** (no libav linking): simple cross-platform
@@ -482,6 +502,8 @@ cargo run -p motion-extractor -- render IN OUT [opts]   # CLI
 cargo test --workspace                                  # Rust unit + integration tests
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 npm --prefix web ci && npm --prefix web run build      # build the UI (embedded by crates/server)
+cargo run -p motion-extractor                           # desktop app (needs the Tauri prerequisites)
+cargo run -p motion-extractor --no-default-features -- serve [FILE]   # headless, no webview deps
 cargo run -p motion-extractor -- serve [FILE]          # then open http://127.0.0.1:8090/
 npm --prefix web run dev                                # Vite dev server, proxies /api to :8090
 npm --prefix web test                                   # frontend unit tests (Vitest)
@@ -490,12 +512,13 @@ npm --prefix e2e ci && npx --prefix e2e playwright install --with-deps chromium 
 cargo build && npm --prefix e2e test                    # E2E against target/debug (UI must be built)
 MX_BROWSERS=chromium,webkit npm --prefix e2e test       # both engines
 npm --prefix e2e run lint                               # Prettier + tsc for the tests
+cargo run -p motion-extractor -- --smoke-test           # desktop smoke test (needs a display)
+(cd crates/app && ../../web/node_modules/.bin/tauri build)   # installers for this platform
 ```
 
 Planned (later milestones):
 
 ```
-cargo run -p motion-extractor                           # desktop GUI
 ```
 
 ## 7. CI / CD (GitHub Actions)
@@ -525,7 +548,7 @@ cargo run -p motion-extractor                           # desktop GUI
   frames + `serve` command
 - [x] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs, file browser
 - [x] M4 — Playwright E2E suite covering §2 (36 tests, Chromium and WebKit)
-- [ ] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke tests
+- [x] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke test, installers (.deb/.rpm verified)
 - [ ] M6 — GitHub Actions CI + release pipeline with installers
 - [ ] Later — alpha output, Flatpak, presets library, faster bloom compositing
 

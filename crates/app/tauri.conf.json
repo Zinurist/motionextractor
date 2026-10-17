@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Motion Extractor",
+  "mainBinaryName": "motion-extractor",
+  "identifier": "io.github.motionextractor",
+  "build": {
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Video",
+    "shortDescription": "Highlight the motion in videos",
+    "longDescription": "Motion extraction for videos: compares every frame with an earlier one (or a fixed reference frame) so that only what moved lights up. Scrubbable preview, color, bloom and overlay, rendering through ffmpeg.",
+    "license": "GPL-3.0-or-later",
+    "licenseFile": "../../LICENSE",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["ffmpeg"]
+      },
+      "rpm": {
+        "depends": ["/usr/bin/ffmpeg"]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

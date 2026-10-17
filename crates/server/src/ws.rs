@@ -42,6 +42,9 @@ pub async fn upgrade(
 }
 
 async fn client(socket: WebSocket, addr: SocketAddr, st: Shared) {
+    if let Some(on_connect) = &st.config.on_connect {
+        on_connect();
+    }
     let (mut sink, mut stream) = socket.split();
     let (out_tx, mut out_rx) = mpsc::channel::<Message>(8);
     let writer = tokio::spawn(async move {

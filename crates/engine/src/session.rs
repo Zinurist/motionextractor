@@ -87,11 +87,26 @@ pub struct CacheState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    Opened { video: VideoState },
-    Preset { preset: Preset, rev: u64 },
-    Cache { cache: CacheState },
-    Render { job: JobStatus },
-    Settings { settings: Settings },
+    Opened {
+        video: VideoState,
+    },
+    Preset {
+        preset: Preset,
+        rev: u64,
+    },
+    Cache {
+        cache: CacheState,
+    },
+    Render {
+        job: JobStatus,
+    },
+    Settings {
+        settings: Settings,
+    },
+    /// A problem not tied to a request (e.g. a file dropped onto the window could not be opened).
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -259,6 +274,12 @@ impl Session {
         });
         self.emit_cache(true);
         Ok(video)
+    }
+
+    /// Shows an error message in every connected UI.
+    pub fn report_error(&self, message: String) {
+        tracing::warn!("{message}");
+        (self.events)(Event::Error { message });
     }
 
     pub fn video(&self) -> Option<VideoState> {

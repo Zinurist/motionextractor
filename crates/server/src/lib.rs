@@ -45,6 +45,8 @@ pub struct ServerConfig {
     /// Allowed directories in server mode (empty: no file access).
     pub roots: Vec<PathBuf>,
     pub dialogs: Option<Arc<dyn Dialogs>>,
+    /// Called whenever a UI client connects over the WebSocket (used by the desktop smoke test).
+    pub on_connect: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 /// Creates the event sink to pass to [`Session::new`] and the channel the server reads from.

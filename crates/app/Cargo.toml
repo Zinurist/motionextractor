@@ -4,11 +4,17 @@ description = "Motion extraction for videos: highlight what moves"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 rust-version.workspace = true
 
 [[bin]]
 name = "motion-extractor"
 path = "src/main.rs"
+
+[features]
+default = ["desktop"]
+# The native window (Tauri). Without it the binary supports `serve`, `render` and `probe` only.
+desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog"]
 
 [dependencies]
 anyhow.workspace = true
@@ -20,15 +26,23 @@ mx-engine.workspace = true
 mx-media.workspace = true
 mx-server.workspace = true
 serde_json.workspace = true
-tracing.workspace = true
+tauri = { version = "2", optional = true , features = [] }
+tauri-plugin-dialog = { version = "2", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "net"] }
+tracing.workspace = true
 tracing-subscriber.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+
+[build-dependencies]
+tauri-build = { version = "2", optional = true, features = [] }
+
 [dev-dependencies]
-mx-media = { workspace = true, features = ["testing"] }
-tempfile.workspace = true
 mx-core.workspace = true
+mx-media = { workspace = true, features = ["testing"] }
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

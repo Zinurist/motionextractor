@@ -107,6 +107,7 @@ pub fn run(args: ServeArgs) -> Result<()> {
             token,
             roots,
             dialogs: None,
+            on_connect: None,
         };
         mx_server::serve(listener, Arc::clone(&session), events, config).await?;
         Ok(())

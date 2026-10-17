@@ -31,6 +31,7 @@ async fn start(token: Option<&str>) -> Server {
         token: token.map(String::from),
         roots: vec![dir.path().to_owned()],
         dialogs: None,
+        on_connect: None,
     };
     tokio::spawn(serve(listener, session, events, config));
     let http = reqwest::Client::builder()
