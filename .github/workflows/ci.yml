@@ -69,7 +69,8 @@ jobs:
         shell: bash
         run: |
           npm ci --prefix e2e
-          npx --prefix e2e playwright install --with-deps $(echo "$MX_BROWSERS" | tr ',' ' ')
+          IFS=',' read -ra browsers <<< "$MX_BROWSERS"
+          npx --prefix e2e playwright install --with-deps "${browsers[@]}"
 
       - name: End-to-end tests
         run: mise run e2e
