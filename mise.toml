@@ -6,6 +6,8 @@
 node = "22"
 rust = { version = "stable", components = "rustfmt,clippy" }
 actionlint = "latest"
+# Used by actionlint to check the scripts in the workflows (as on the CI runners).
+shellcheck = "latest"
 
 # --- dependencies & builds -------------------------------------------------------------------
 
