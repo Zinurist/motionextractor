@@ -20,7 +20,7 @@ desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog"]
 anyhow.workspace = true
 clap.workspace = true
 directories = "6"
-getrandom = "0.3"
+getrandom = "0.4"
 mx-core.workspace = true
 mx-engine.workspace = true
 mx-media.workspace = true
@@ -33,7 +33,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Console"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
 
 [build-dependencies]
 tauri-build = { version = "2", optional = true, features = [] }
