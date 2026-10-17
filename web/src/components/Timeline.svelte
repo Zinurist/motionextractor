@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { store } from '../lib/store.svelte';
+  import { MAX_VOLUME, store } from '../lib/store.svelte';
   import { formatTime } from '../lib/time';
   import Icon from './Icon.svelte';
 
@@ -128,6 +128,23 @@
         data-testid="mute"
         data-muted={store.muted}
         onclick={() => store.toggleMute()}><Icon name={store.muted ? 'muted' : 'volume'} /></button
+      >
+      <input
+        class="volume"
+        class:muted={store.muted}
+        type="range"
+        min="0"
+        max={MAX_VOLUME * 100}
+        step="5"
+        value={Math.round(store.volume * 100)}
+        aria-label="Volume"
+        title="Volume (double-click: 100 %)"
+        data-testid="volume"
+        oninput={(e) => store.setVolume(Number(e.currentTarget.value) / 100)}
+        ondblclick={() => store.setVolume(1)}
+      />
+      <span class="mono muted volume-label" data-testid="volume-value"
+        >{Math.round(store.volume * 100)}%</span
       >
     {/if}
     <span class="time mono" data-testid="time">
@@ -275,6 +292,19 @@
     align-items: center;
     gap: 4px;
     margin-left: 8px;
+  }
+
+  .volume {
+    width: 90px;
+  }
+
+  .volume.muted {
+    opacity: 0.4;
+  }
+
+  .volume-label {
+    width: 3.5em;
+    font-size: 11px;
   }
 
   .trim-info {
