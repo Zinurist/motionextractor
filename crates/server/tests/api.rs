@@ -560,3 +560,32 @@ fn urlenc(s: &str) -> String {
         })
         .collect()
 }
+
+#[tokio::test]
+async fn upload_picks_a_free_name() {
+    let s = start(None).await;
+    let dir = s.dir.path().display().to_string();
+    let mut paths = Vec::new();
+    for _ in 0..3 {
+        let url = format!(
+            "{}/api/fs/upload?dir={}&name=clip.mp4&unique=true",
+            s.base,
+            urlenc(&dir)
+        );
+        let r = s.http.post(url).body(vec![7; 10]).send().await.unwrap();
+        assert_eq!(r.status(), StatusCode::OK);
+        let v: Value = r.json().await.unwrap();
+        paths.push(v["path"].as_str().unwrap().to_owned());
+    }
+    let names: Vec<_> = paths
+        .iter()
+        .map(|p| {
+            std::path::Path::new(p)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(names, ["clip.mp4", "clip (2).mp4", "clip (3).mp4"]);
+}

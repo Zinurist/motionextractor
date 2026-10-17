@@ -36,7 +36,8 @@ export function uploadFile(
 ): Promise<{ path: string; size: number }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const q = new URLSearchParams({ dir, name });
+    // The server picks a free name if this one is taken.
+    const q = new URLSearchParams({ dir, name, unique: 'true' });
     xhr.open('POST', `/api/fs/upload?${q}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total);
@@ -54,17 +55,6 @@ export function uploadFile(
 /** URL that downloads a file from the server as an attachment. */
 export function downloadUrl(path: string): string {
   return `/api/fs/download?path=${encodeURIComponent(path)}`;
-}
-
-/** A file name not yet used in `taken` ("clip.mp4" → "clip (2).mp4"). */
-export function uniqueName(name: string, taken: Set<string>): string {
-  if (!taken.has(name)) return name;
-  const dot = name.lastIndexOf('.');
-  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
-  for (let i = 2; ; i++) {
-    const candidate = `${stem} (${i})${ext}`;
-    if (!taken.has(candidate)) return candidate;
-  }
 }
 
 export const api = {

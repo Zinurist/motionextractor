@@ -138,14 +138,3 @@ describe('playback', () => {
     expect(lagging(10, null)).toBe(true);
   });
 });
-
-import { uniqueName } from './api';
-
-describe('uploads', () => {
-  it('finds a free file name', () => {
-    expect(uniqueName('clip.mp4', new Set())).toBe('clip.mp4');
-    expect(uniqueName('clip.mp4', new Set(['clip.mp4']))).toBe('clip (2).mp4');
-    expect(uniqueName('clip.mp4', new Set(['clip.mp4', 'clip (2).mp4']))).toBe('clip (3).mp4');
-    expect(uniqueName('README', new Set(['README']))).toBe('README (2)');
-  });
-});
