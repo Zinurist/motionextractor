@@ -11,7 +11,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, DragDropEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
-use crate::serve::{default_settings_path, ffmpeg_for, random_token};
+use crate::serve::{default_settings_path, ffmpeg_for};
 
 const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "mov", "mkv", "webm", "avi", "m4v", "ts", "mts", "m2ts", "mpg", "mpeg", "wmv", "flv",
@@ -148,4 +148,11 @@ pub fn run(file: Option<PathBuf>, smoke_test: bool) -> Result<()> {
         .context("cannot start the desktop window")?;
     drop(rt);
     Ok(())
+}
+
+/// Session token for the desktop window, so other local processes cannot drive the app.
+fn random_token() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).expect("system random number generator");
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

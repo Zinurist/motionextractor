@@ -38,3 +38,7 @@ mise run build            # target/release/motion-extractor
 mise run serve            # web UI at http://127.0.0.1:8090/
 mise run test             # tests (mise tasks lists everything)
 ```
+
+`scripts/quick-deploy.sh user@host` builds the web UI server for a Linux host and runs it there as a
+systemd user service on port 8090. `serve` has no authentication — on a network, put it behind an
+authenticating reverse proxy.

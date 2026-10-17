@@ -307,6 +307,38 @@ fn serve_prints_url_and_answers() {
 }
 
 #[test]
+fn serve_on_all_interfaces_needs_no_token() {
+    use std::io::{BufRead, BufReader};
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_motion-extractor"))
+        .args([
+            "serve",
+            "--bind",
+            "0.0.0.0",
+            "--port",
+            "0",
+            "--root",
+            s(dir.path()),
+            "--settings",
+            s(&dir.path().join("settings.json")),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let url = line.trim().rsplit(' ').next().unwrap().to_owned();
+    assert!(!url.contains("token"), "{line}");
+    let port = url.trim_end_matches('/').rsplit(':').next().unwrap();
+    let info = http_get(&format!("127.0.0.1:{port}"), "/api/info");
+    assert!(info.starts_with("HTTP/1.1 200"), "{info}");
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
+
+#[test]
 fn background_color_and_revealed_original() {
     let (dir, input) = setup(MovingSquare::default());
     let out = dir.path().join("out.mkv");

@@ -14,13 +14,13 @@ path = "src/main.rs"
 [features]
 default = ["desktop"]
 # The native window (Tauri). Without it the binary supports `serve`, `render` and `probe` only.
-desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog"]
+desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:getrandom"]
 
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
 directories = "6"
-getrandom = "0.3"
+getrandom = { version = "0.3", optional = true }
 mx-core.workspace = true
 mx-engine.workspace = true
 mx-media.workspace = true
