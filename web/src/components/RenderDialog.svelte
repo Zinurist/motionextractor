@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api, ApiError, downloadUrl } from '../lib/api';
   import { joinArgs, splitArgs } from '../lib/args';
   import { defaultOutput, withExtension } from '../lib/paths';
   import { store } from '../lib/store.svelte';
@@ -263,6 +263,11 @@
           )}
         {:else if job.state === 'finished'}
           Finished: {job.output} ({formatDuration(job.elapsed_seconds)})
+          {#if !store.info?.dialogs && job.output && opts.codec !== 'png'}
+            <a class="download" href={downloadUrl(job.output)} data-testid="render-download"
+              >Download</a
+            >
+          {/if}
         {:else if job.state === 'cancelled'}
           Cancelled
         {:else}
@@ -340,6 +345,11 @@
 
   progress {
     width: 100%;
+  }
+
+  .download {
+    margin-left: 8px;
+    color: var(--accent);
   }
 
   .confirm {

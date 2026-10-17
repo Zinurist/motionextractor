@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { api } from '../lib/api';
+  import { api, downloadUrl, uniqueName, uploadFile } from '../lib/api';
   import { basename, join } from '../lib/paths';
   import { store } from '../lib/store.svelte';
   import type { Listing } from '../lib/types';
@@ -54,6 +54,30 @@
   }
 
   const roots = $derived(store.info?.roots ?? []);
+
+  /** Upload progress (0..1) while a file is being uploaded. */
+  let uploading = $state<{ name: string; progress: number } | null>(null);
+  let fileInput = $state<HTMLInputElement>();
+
+  /** Uploads a video into the current directory and opens it. */
+  async function upload(file: File | undefined) {
+    if (!file || !listing) return;
+    const name = uniqueName(file.name, new Set(listing.entries.map((e) => e.name)));
+    uploading = { name, progress: 0 };
+    try {
+      const done = await uploadFile(listing.path, file, name, (p) => {
+        if (uploading) uploading.progress = p;
+      });
+      store.toast('info', `Uploaded ${name}`);
+      onPick(done.path);
+    } catch (e) {
+      store.error(e);
+      void load(listing.path);
+    } finally {
+      uploading = null;
+      if (fileInput) fileInput.value = '';
+    }
+  }
 </script>
 
 <Modal {title} testid="file-browser" wide onClose={onCancel}>
@@ -78,7 +102,7 @@
   {#if error}<p class="error" data-testid="fb-error">{error}</p>{/if}
   <ul class="entries" data-testid="fb-entries">
     {#each listing?.entries ?? [] as e (e.path)}
-      <li>
+      <li class="row-entry">
         <button
           class="entry"
           class:dir={e.dir}
@@ -92,6 +116,16 @@
           <span class="name">{e.name}</span>
           {#if !e.dir}<span class="muted size">{(e.size / 1048576).toFixed(1)} MB</span>{/if}
         </button>
+        {#if !e.dir}
+          <a
+            class="download"
+            href={downloadUrl(e.path)}
+            download={e.name}
+            title="Download {e.name}"
+            aria-label="Download {e.name}"
+            data-testid="fb-download"><Icon name="download" /></a
+          >
+        {/if}
       </li>
     {:else}
       <li class="muted empty">Empty directory</li>
@@ -104,7 +138,31 @@
     </div>
   {/if}
 
+  {#if uploading}
+    <div class="bar" data-testid="fb-upload-progress">
+      <span class="muted">Uploading {uploading.name}…</span>
+      <progress max="1" value={uploading.progress}></progress>
+      <span class="mono muted">{Math.round(uploading.progress * 100)}%</span>
+    </div>
+  {/if}
+
   {#snippet footer()}
+    {#if mode === 'open'}
+      <input
+        bind:this={fileInput}
+        class="hidden"
+        type="file"
+        accept="video/*,.mkv,.ts,.mts,.m2ts,.flv,.wmv"
+        data-testid="fb-upload-input"
+        onchange={(e) => upload(e.currentTarget.files?.[0])}
+      />
+      <button
+        class="upload"
+        disabled={!listing || !!uploading}
+        data-testid="fb-upload"
+        onclick={() => fileInput?.click()}><Icon name="upload" /> Upload video…</button
+      >
+    {/if}
     <button onclick={onCancel}>Cancel</button>
     {#if mode === 'save'}
       <button class="primary" data-testid="fb-confirm" disabled={!name.trim()} onclick={confirm}
@@ -151,6 +209,40 @@
     background: var(--bg);
   }
 
+  .row-entry {
+    display: flex;
+    align-items: center;
+  }
+
+  .row-entry:hover {
+    background: var(--panel-2);
+  }
+
+  .download {
+    display: flex;
+    padding: 5px 10px;
+    color: var(--muted);
+  }
+
+  .download:hover {
+    color: var(--text);
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  .upload {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: auto;
+  }
+
+  progress {
+    flex: 1;
+  }
+
   .entry {
     display: flex;
     align-items: center;
@@ -161,10 +253,6 @@
     background: none;
     text-align: left;
     padding: 5px 10px;
-  }
-
-  .entry:hover {
-    background: var(--panel-2);
   }
 
   .entry .name {

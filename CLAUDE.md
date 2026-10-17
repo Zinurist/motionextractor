@@ -43,6 +43,10 @@ interactively with fast scrubbing, and rendered to a video file via ffmpeg.
 
 - Open any video ffmpeg can decode. Opening via: native file dialog (desktop), drag & drop onto the
   window (desktop), server-side file browser (server mode), path given on the command line.
+- **Server mode: upload and download.** The file browser's "Upload video…" sends a local file to
+  the directory being browsed (with progress) and opens it; names that already exist get a
+  " (2)" suffix instead of overwriting. Files in the browser and finished renders (render dialog)
+  can be downloaded. Both stay within the `--root` directories.
 - The video is probed with `ffprobe`: resolution, frame rate, frame count, duration, audio presence.
 - Frames are addressed by **index** `0..N-1`. The video is treated as constant frame rate (CFR) at
   its probed average frame rate; variable-frame-rate input is normalised to CFR on decode
@@ -370,6 +374,8 @@ root).
 | `GET /api/frame/{i}?view=output\|original&full=false` | Frame as PNG (preview cache, or decoded at full resolution) |
 | `GET /api/audio` | The video's audio as WAV (16-bit stereo 48 kHz, HTTP range requests supported); 404 without audio |
 | `GET /api/fs/list?path=` | Directory listing `{path, parent, entries: [{name, path, dir, size}]}` (hidden files skipped) |
+| `POST /api/fs/upload?dir=&name=[&overwrite=true]` | Raw request body (no size limit) stored as `dir/name` via a hidden `.name.part` file renamed on completion → `{path, size}`; 409 if it exists, 400 for names with path components or a leading dot |
+| `GET /api/fs/download?path=` | File as an attachment (`Content-Disposition` with UTF-8 name, range requests supported); 400 for directories |
 | `POST /api/dialog/{open-video\|save-video\|open-preset\|save-preset}` | Native dialog (desktop) → `{path}` |
 | `WS /api/ws` | Frame requests/responses and server events |
 
@@ -543,6 +549,7 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 | Render dialog: defaults, command preview, codecs, CRF, speed, pixel format, extra args, audio, range, resolution, PNG sequence, output browser, overwrite confirmation, cancel, errors, progress chip | `render.spec.ts` |
 | Settings: memory estimate, persistence, preview resolution, validation | `settings.spec.ts` |
 | Preset save/load, invalid presets | `presets.spec.ts` |
+| Upload (opens the video, no overwrite), download from the file browser and of finished renders | `files.spec.ts` |
 | Parameter sync between clients | `sync.spec.ts` |
 
 ---

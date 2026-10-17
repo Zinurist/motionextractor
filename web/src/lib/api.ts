@@ -24,6 +24,49 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+/**
+ * Uploads a file into `dir` on the server (server mode). XMLHttpRequest instead of fetch, because
+ * only it reports upload progress.
+ */
+export function uploadFile(
+  dir: string,
+  file: File,
+  name: string,
+  onProgress: (fraction: number) => void,
+): Promise<{ path: string; size: number }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const q = new URLSearchParams({ dir, name });
+    xhr.open('POST', `/api/fs/upload?${q}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      const data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new ApiError(xhr.status, data?.error ?? `upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new ApiError(0, 'upload failed: connection error'));
+    xhr.send(file);
+  });
+}
+
+/** URL that downloads a file from the server as an attachment. */
+export function downloadUrl(path: string): string {
+  return `/api/fs/download?path=${encodeURIComponent(path)}`;
+}
+
+/** A file name not yet used in `taken` ("clip.mp4" → "clip (2).mp4"). */
+export function uniqueName(name: string, taken: Set<string>): string {
+  if (!taken.has(name)) return name;
+  const dot = name.lastIndexOf('.');
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  for (let i = 2; ; i++) {
+    const candidate = `${stem} (${i})${ext}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 export const api = {
   info: () => request<Info>('GET', '/info'),
   session: () => request<SessionInfo>('GET', '/session'),
