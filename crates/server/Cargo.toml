@@ -16,21 +16,21 @@ mime_guess = "2"
 mx-core.workspace = true
 mx-engine.workspace = true
 mx-media.workspace = true
-png = "0.17"
+png = "0.18"
 rust-embed = "8"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 tracing.workspace = true
 
 [dev-dependencies]
 mx-media = { workspace = true, features = ["testing"] }
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
 tempfile.workspace = true
-tokio-tungstenite = "0.26"
+tokio-tungstenite = "0.29"
 
 [lints]
 workspace = true
