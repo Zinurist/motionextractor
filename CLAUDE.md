@@ -386,6 +386,9 @@ parameters change (render options do not change it).
 - Frames: the store requests the views the current mode needs (`output`, `original` or both) on
   every playhead/mode/revision change; responses older than the newest shown one are dropped.
   Playback advances the playhead by wall-clock time, so slow frames are skipped, not slowed.
+- The viewer's "Loading…" badge appears only when a frame is pending and no new frame has arrived
+  for 300 ms, so continuous playback and scrubbing (where the playhead is always slightly ahead of
+  the frames) do not make it flicker.
 - Viewer uploads RGB8 frames as WebGL textures (`texImage2D`), JPEG frames via `createImageBitmap`;
   nearest-neighbour filtering from 200% zoom. 100% = one preview pixel per CSS pixel.
 - Keyboard: Space play/pause, ←/→ ±1 frame, Shift+←/→ ±1 s, Home/End (ignored while typing).
@@ -487,7 +490,7 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 | Feature (§2) | E2E spec |
 |---|---|
 | Open via file browser, navigation, non-video errors, connection state | `open.spec.ts` |
-| Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill | `playback.spec.ts` |
+| Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill, no loading-badge flicker during playback | `playback.spec.ts` |
 | Rolling offset (frames/seconds, unit switch, negative, zero rejected), fixed reference | `comparison.spec.ts` |
 | Threshold/gain/gamma, color picker, bloom, overlay (brightness, opacity), classic mode, metric, denoise | `effect.spec.ts` |
 | Original/split/side-by-side views, split handle, zoom/pan/fit | `views.spec.ts` |
@@ -500,55 +503,56 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 
 ## 6. Build, run, test
 
-Prerequisites: Rust (stable, ≥ 1.85), ffmpeg + ffprobe (with libx264, libx265, libvpx) on `PATH`;
-later Node.js (LTS) and, for the desktop build, the Tauri system prerequisites for the platform.
+Tooling and tasks are defined in `mise.toml` ([mise](https://mise.jdx.dev)): `mise install` installs
+the pinned Node.js, Rust (stable, with rustfmt/clippy) and actionlint; `mise tasks` lists the tasks.
+Not managed by mise (system prerequisites): ffmpeg + ffprobe (with libx264, libx265, libvpx) on
+`PATH`, and the Tauri system libraries for the desktop app. The plain `cargo`/`npm` commands behind
+each task keep working without mise. CI runs the same tasks.
 
 ```
-cargo build --release                                   # target/release/motion-extractor
-cargo run -p motion-extractor -- render IN OUT [opts]   # CLI
-cargo test --workspace                                  # Rust unit + integration tests
-cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
-npm --prefix web ci && npm --prefix web run build      # build the UI (embedded by crates/server)
-cargo run -p motion-extractor                           # desktop app (needs the Tauri prerequisites)
-cargo run -p motion-extractor --no-default-features -- serve [FILE]   # headless, no webview deps
-cargo run -p motion-extractor -- serve [FILE]          # then open http://127.0.0.1:8090/
-npm --prefix web run dev                                # Vite dev server, proxies /api to :8090
-npm --prefix web test                                   # frontend unit tests (Vitest)
-npm --prefix web run check && npm --prefix web run lint # svelte-check, Prettier, ESLint
-npm --prefix e2e ci && npx --prefix e2e playwright install --with-deps chromium webkit
-cargo build && npm --prefix e2e test                    # E2E against target/debug (UI must be built)
-MX_BROWSERS=chromium,webkit npm --prefix e2e test       # both engines
-npm --prefix e2e run lint                               # Prettier + tsc for the tests
-cargo run -p motion-extractor -- --smoke-test           # desktop smoke test (needs a display)
-(cd crates/app && ../../web/node_modules/.bin/tauri build)   # installers for this platform
+mise run build            # release build (desktop + CLI) → target/release/motion-extractor
+mise run build:headless   # release build without the desktop window (serve/render/probe)
+mise run desktop [-- FILE]   # run the desktop app
+mise run serve [-- ARGS]     # web UI without a window at http://127.0.0.1:8090/
+mise run dev              # Vite dev server with hot reload (proxies /api to a running `serve`)
+mise run bundle           # installers for this platform (Tauri)
+mise run test             # Rust (needs ffmpeg) + web unit/integration tests
+mise run e2e              # Playwright E2E (MX_BROWSERS=chromium,webkit for both engines)
+mise run lint             # rustfmt, clippy (± desktop), svelte-check, ESLint, Prettier, tsc, actionlint
+mise run fmt              # format everything
+mise run smoke            # desktop smoke test (needs a display)
+mise run ci               # lint + test + e2e
 ```
 
-Planned (later milestones):
-
-```
-```
+Task dependencies build the web UI (`web:build`, embedded by `crates/server`) and install npm
+dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browsers`) as needed.
 
 ## 7. CI / CD (GitHub Actions)
 
-- **`.github/workflows/ci.yml`** (push to `main`, pull requests, manual):
-  - *Lint* (Ubuntu): rustfmt, clippy (`-D warnings`, with and without the `desktop` feature),
-    svelte-check, Prettier, ESLint, Vitest, E2E lint (Prettier + tsc).
+- **`.github/workflows/ci.yml`** (push to `main`, pull requests, manual), tools via `jdx/mise-action`:
+  - *Lint* (Ubuntu): `mise run lint` and `mise run test:web`.
   - *Test* matrix — Ubuntu 24.04 (Chromium + WebKit), Windows (Chromium), macOS (Chromium + WebKit):
-    install ffmpeg (apt / choco / brew), build the web UI, `cargo test --workspace`, build the app,
-    desktop smoke test (`--smoke-test`, under `xvfb-run` on Linux), Playwright E2E. Reports and traces
+    install ffmpeg (apt / choco / brew), `mise run test:rust`, browsers with system dependencies,
+    `mise run e2e`, desktop smoke test (`--smoke-test`, under `xvfb-run` on Linux). Reports and traces
     are uploaded on failure.
-- **`.github/workflows/release.yml`** (tag `v*`, or manual for a dry run):
-  - Linux (Ubuntu 22.04 for glibc compatibility): `.deb` and `.rpm` (system ffmpeg) and an `.AppImage`
-    with bundled ffmpeg; Windows: `.msi` and NSIS `-setup.exe` with bundled ffmpeg; macOS: universal
-    `.dmg` with bundled (lipo'd) ffmpeg. Plus headless CLI archives
-    (`motion-extractor-cli-<version>-<target>`, built `--no-default-features`).
+- **`.github/workflows/build.yml`** (reusable, input `label`): the platform build matrix —
+  Linux (Ubuntu 22.04 for glibc compatibility): `.deb` and `.rpm` (system ffmpeg) and an `.AppImage`
+  with bundled ffmpeg; Windows: `.msi` and NSIS `-setup.exe` with bundled ffmpeg; macOS: universal
+  `.dmg` with bundled (lipo'd) ffmpeg; plus headless CLI archives
+  (`motion-extractor-cli-<label>-<target>`, built `--no-default-features`). File names carry the
+  label instead of the crate version. Artifacts `dist-<target>` are kept for 7 days.
   - `scripts/fetch-ffmpeg.sh <target> crates/app/binaries` downloads static GPL builds (BtbN for
     Linux/Windows, martin-riedl.de for macOS with SHA-256 check) named `ffmpeg-<target>` for
     `tauri.ffmpeg.conf.json`.
-  - Artifacts are attached to a **draft** GitHub release (published by hand). Builds are not
-    code-signed or notarised yet (macOS: right-click → Open; Windows: SmartScreen warning).
+- **`.github/workflows/release.yml`** (tag `v*`, or manual for a dry run): `build.yml` with the tag as
+  label, then a **draft** GitHub release with all files (published by hand).
+- **`.github/workflows/nightly.yml`** (daily 02:17 UTC, or manual): if `main` moved since the last
+  nightly (the `nightly` tag), `build.yml` with label `nightly-YYYYMMDD-<sha>`, then the rolling
+  `nightly` pre-release (not marked latest) is deleted and recreated with the new files — storage
+  stays at one set of builds.
+- Builds are not code-signed or notarised yet (macOS: right-click → Open; Windows: SmartScreen).
 - **`.github/dependabot.yml`**: monthly grouped updates for actions, cargo and npm.
-- Workflows are checked with `actionlint`.
+- Workflows are checked with `actionlint` (part of `mise run lint`).
 
 **Releasing:** bump `version` in the root `Cargo.toml` (and `web`/`e2e` `package.json`), commit,
 tag `vX.Y.Z`, push the tag, review and publish the draft release.
@@ -572,7 +576,8 @@ tag `vX.Y.Z`, push the tag, review and publish the draft release.
 - [x] M3 — web frontend: viewer, timeline, parameter panel, render & settings dialogs, file browser
 - [x] M4 — Playwright E2E suite covering §2 (36 tests, Chromium and WebKit)
 - [x] M5 — desktop shell (Tauri), native dialogs, drag & drop, smoke test, installers (.deb/.rpm verified)
-- [x] M6 — GitHub Actions CI + release pipeline with installers (not yet run on GitHub)
+- [x] M6 — GitHub Actions CI + release pipeline with installers, rolling nightly builds, mise tasks
+  (workflows not yet run on GitHub)
 - [ ] Later — alpha output, Flatpak, presets library, faster bloom compositing
 
 ## 10. Licensing

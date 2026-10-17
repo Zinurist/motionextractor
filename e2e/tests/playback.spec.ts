@@ -64,3 +64,23 @@ test('fills the preview cache in the background', async ({ app }) => {
   await expect(app.getByTestId('cache-info')).toHaveAttribute('data-cached', '30');
   await expect(app.getByTestId('cache-info')).toContainText('30 / 30 frames cached');
 });
+
+test('does not flash the loading badge while playing', async ({ app }) => {
+  // With every frame cached, playback never stalls: the badge must not appear at all.
+  await expect(app.getByTestId('cache-info')).toHaveAttribute('data-cached', '30');
+  await app.evaluate(() => {
+    const w = window as unknown as { badgeShown: number };
+    w.badgeShown = 0;
+    new MutationObserver(() => {
+      if (document.querySelector('[data-testid="viewer-loading"]')) w.badgeShown++;
+    }).observe(document.body, { subtree: true, childList: true });
+  });
+  await app.getByTestId('play').click();
+  await expect(app.getByTestId('play')).toHaveAttribute('data-playing', 'false', {
+    timeout: 10_000,
+  });
+  await expectFrame(app, 29);
+  expect(await app.evaluate(() => (window as unknown as { badgeShown: number }).badgeShown)).toBe(
+    0,
+  );
+});

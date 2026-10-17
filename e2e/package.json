@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "lint": "prettier --check . && tsc -p ."
+    "lint": "prettier --check . && tsc -p .",
+    "format": "prettier --write ."
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

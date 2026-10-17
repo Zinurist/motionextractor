@@ -172,6 +172,19 @@
         shown.index !== store.frame ||
         (shown.rev !== store.rev && shownView === 'output')),
   );
+  // During playback and scrubbing the playhead is always a little ahead of the frames arriving,
+  // so the badge only appears when no new frame has arrived for a while (a real stall).
+  const LOADING_DELAY_MS = 300;
+  let showLoading = $state(false);
+  $effect(() => {
+    void shown; // every new frame restarts the grace period
+    if (!loading) {
+      showLoading = false;
+      return;
+    }
+    const timer = setTimeout(() => (showLoading = true), LOADING_DELAY_MS);
+    return () => clearTimeout(timer);
+  });
   const modes = [
     ['output', 'Output'],
     ['original', 'Original'],
@@ -235,7 +248,7 @@
           style:left="{rects[0].x + rects[0].w * split}px"
         ></div>
       {/if}
-      {#if loading}
+      {#if showLoading}
         <div class="badge" data-testid="viewer-loading">Loading…</div>
       {/if}
     {/if}

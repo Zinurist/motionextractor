@@ -1,0 +1,113 @@
+# Development tools and tasks (https://mise.jdx.dev). `mise install` sets up the toolchain,
+# `mise tasks` lists the tasks. System prerequisites not managed here: ffmpeg + ffprobe, and the
+# Tauri system libraries for the desktop app (https://tauri.app/start/prerequisites/).
+
+[tools]
+node = "22"
+rust = { version = "stable", components = "rustfmt,clippy" }
+actionlint = "latest"
+
+# --- dependencies & builds -------------------------------------------------------------------
+
+[tasks."web:install"]
+description = "Install the web UI's npm dependencies"
+run = "npm ci --prefix web"
+sources = ["web/package-lock.json"]
+outputs = ["web/node_modules/.package-lock.json"]
+
+[tasks."web:build"]
+description = "Build the web UI into web/dist (embedded by the server)"
+depends = ["web:install"]
+run = "npm --prefix web run build"
+
+[tasks."e2e:install"]
+description = "Install the E2E test dependencies"
+run = "npm ci --prefix e2e"
+sources = ["e2e/package-lock.json"]
+outputs = ["e2e/node_modules/.package-lock.json"]
+
+[tasks."e2e:browsers"]
+description = "Download the Playwright browsers (Chromium, WebKit)"
+depends = ["e2e:install"]
+run = "npx --prefix e2e playwright install chromium webkit"
+
+[tasks.build]
+description = "Release build of the app (desktop + CLI)"
+depends = ["web:build"]
+run = "cargo build --release -p motion-extractor"
+
+[tasks."build:headless"]
+description = "Release build without the desktop window (serve/render/probe only)"
+depends = ["web:build"]
+run = "cargo build --release -p motion-extractor --no-default-features"
+
+[tasks.bundle]
+description = "Installers for this platform (Tauri)"
+depends = ["web:build"]
+dir = "crates/app"
+run = "../../web/node_modules/.bin/tauri build"
+
+# --- running ---------------------------------------------------------------------------------
+
+[tasks.desktop]
+description = "Run the desktop app (extra arguments are passed on, e.g. a video)"
+depends = ["web:build"]
+run = "cargo run -p motion-extractor --"
+
+[tasks.serve]
+description = "Run the web UI without a window at http://127.0.0.1:8090/ (extra arguments are passed on)"
+depends = ["web:build"]
+run = "cargo run -p motion-extractor --no-default-features -- serve"
+
+[tasks.dev]
+description = "Vite dev server with hot reload (proxies /api to a running `mise run serve`)"
+depends = ["web:install"]
+run = "npm --prefix web run dev"
+
+# --- quality ---------------------------------------------------------------------------------
+
+[tasks.fmt]
+description = "Format Rust and web code"
+depends = ["web:install", "e2e:install"]
+run = ["cargo fmt --all", "npm --prefix web run format", "npm --prefix e2e run format"]
+
+[tasks.lint]
+description = "All linters (rustfmt, clippy, svelte-check, ESLint, Prettier, tsc, actionlint)"
+depends = ["web:install", "e2e:install"]
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "cargo clippy -p motion-extractor --no-default-features --all-targets -- -D warnings",
+  "npm --prefix web run check",
+  "npm --prefix web run lint",
+  "npm --prefix e2e run lint",
+  "actionlint",
+]
+
+[tasks."test:rust"]
+description = "Rust unit and integration tests (needs ffmpeg)"
+depends = ["web:build"]
+run = "cargo test --workspace"
+
+[tasks."test:web"]
+description = "Web UI unit tests (Vitest)"
+depends = ["web:install"]
+run = "npm --prefix web test"
+
+[tasks.test]
+description = "Rust and web unit/integration tests"
+depends = ["test:rust", "test:web"]
+
+[tasks.e2e]
+description = "Playwright E2E tests against a debug build (MX_BROWSERS=chromium,webkit for both engines)"
+depends = ["web:build", "e2e:browsers"]
+run = ["cargo build -p motion-extractor", "npm --prefix e2e test"]
+
+[tasks.smoke]
+description = "Desktop smoke test: open the window, wait for the UI, exit (needs a display)"
+depends = ["web:build"]
+run = "cargo run -p motion-extractor -- --smoke-test"
+
+[tasks.ci]
+description = "Everything CI checks"
+depends = ["lint", "test", "e2e"]
