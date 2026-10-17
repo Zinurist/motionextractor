@@ -445,3 +445,118 @@ async fn audio_for_playback() {
     let (status, body) = s.get("/api/audio").await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
 }
+
+#[tokio::test]
+async fn upload_and_download() {
+    let s = start(None).await;
+    let dir = s.dir.path().display().to_string();
+    let upload = |name: &str, body: Vec<u8>, extra: &str| {
+        let url = format!(
+            "{}/api/fs/upload?dir={}&name={}{extra}",
+            s.base,
+            urlenc(&dir),
+            urlenc(name)
+        );
+        s.http.post(url).body(body).send()
+    };
+
+    // Larger than axum's default 2 MB body limit.
+    let data: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+    let r = upload("big clip.mp4", data.clone(), "").await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["size"], 3_000_000);
+    let target = s.dir.path().join("big clip.mp4");
+    assert_eq!(std::fs::read(&target).unwrap(), data);
+    assert!(!s.dir.path().join(".big clip.mp4.part").exists());
+
+    // No silent overwrites; explicit overwrite works.
+    let r = upload("big clip.mp4", vec![1, 2, 3], "").await.unwrap();
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+    let r = upload("big clip.mp4", vec![1, 2, 3], "&overwrite=true")
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(std::fs::read(&target).unwrap(), vec![1, 2, 3]);
+
+    // Names with path components and targets outside the roots are refused.
+    for bad in ["../evil.mp4", ".hidden", "a/b.mp4"] {
+        assert_eq!(
+            upload(bad, vec![0], "").await.unwrap().status(),
+            StatusCode::BAD_REQUEST,
+            "{bad}"
+        );
+    }
+    let outside = std::env::temp_dir().display().to_string();
+    let url = format!(
+        "{}/api/fs/upload?dir={}&name=x.mp4",
+        s.base,
+        urlenc(&outside)
+    );
+    assert_eq!(
+        s.http
+            .post(url)
+            .body(vec![0])
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+
+    // Download as an attachment, with range support.
+    std::fs::write(&target, &data).unwrap();
+    let url = format!(
+        "{}/api/fs/download?path={}",
+        s.base,
+        urlenc(&target.display().to_string())
+    );
+    let r = s.http.get(&url).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let disposition = r.headers()["content-disposition"]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        disposition.starts_with("attachment; filename=\"big clip.mp4\""),
+        "{disposition}"
+    );
+    assert!(
+        disposition.contains("filename*=UTF-8''big%20clip.mp4"),
+        "{disposition}"
+    );
+    assert_eq!(r.bytes().await.unwrap().len(), data.len());
+    let r = s
+        .http
+        .get(&url)
+        .header("range", "bytes=10-19")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(&r.bytes().await.unwrap()[..], &data[10..20]);
+
+    // Directories and paths outside the roots cannot be downloaded.
+    let url = format!("{}/api/fs/download?path={}", s.base, urlenc(&dir));
+    assert_eq!(
+        s.http.get(url).send().await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+    let elsewhere = std::env::temp_dir().join("x").display().to_string();
+    let url = format!("{}/api/fs/download?path={}", s.base, urlenc(&elsewhere));
+    assert_eq!(
+        s.http.get(url).send().await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+}
+
+fn urlenc(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}

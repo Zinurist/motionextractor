@@ -15,7 +15,9 @@
       | 'file'
       | 'reset'
       | 'volume'
-      | 'muted';
+      | 'muted'
+      | 'download'
+      | 'upload';
   } = $props();
 </script>
 
@@ -60,6 +62,16 @@
         stroke-linecap="round"
       />
     {/if}
+  {:else if name === 'download' || name === 'upload'}
+    <path
+      d={name === 'download' ? 'M8 2v8M4.5 6.5 8 10l3.5-3.5' : 'M8 10V2M4.5 5.5 8 2l3.5 3.5'}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path d="M2.5 11v2.5h11V11" fill="none" stroke="currentColor" stroke-width="1.6" />
   {:else if name === 'folder'}
     <path d="M1.5 3.5h5l1.5 1.5h6.5v8h-13z" />
   {:else if name === 'film'}

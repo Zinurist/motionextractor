@@ -94,6 +94,12 @@ fn router(state: Shared) -> Router {
         .route("/frame/{index}", get(api::frame))
         .route("/audio", get(api::audio))
         .route("/fs/list", get(files::list))
+        .route(
+            "/fs/upload",
+            // Videos are large: no request body limit for uploads.
+            post(files::upload).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route("/fs/download", get(files::download))
         .route("/dialog/{kind}", post(api::dialog))
         .route("/ws", get(ws::upgrade));
     Router::new()
