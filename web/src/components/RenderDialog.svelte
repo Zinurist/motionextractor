@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { api, ApiError, downloadUrl } from '../lib/api';
   import { joinArgs, splitArgs } from '../lib/args';
-  import { defaultOutput, withExtension } from '../lib/paths';
+  import { basename, defaultOutput, withExtension } from '../lib/paths';
   import { store } from '../lib/store.svelte';
   import { formatDuration } from '../lib/time';
   import { CODECS, type Codec, type RenderOptions } from '../lib/types';
@@ -264,8 +264,11 @@
         {:else if job.state === 'finished'}
           Finished: {job.output} ({formatDuration(job.elapsed_seconds)})
           {#if !store.info?.dialogs && job.output && opts.codec !== 'png'}
-            <a class="download" href={downloadUrl(job.output)} data-testid="render-download"
-              >Download</a
+            <a
+              class="download"
+              href={downloadUrl(job.output)}
+              download={basename(job.output)}
+              data-testid="render-download">Download</a
             >
           {/if}
         {:else if job.state === 'cancelled'}
