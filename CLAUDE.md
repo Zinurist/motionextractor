@@ -588,7 +588,7 @@ zigbuild`, with zig and cargo-zigbuild provided by mise), uploads it to
 `~/.local/bin/motion-extractor` and (re)starts a systemd **user** service running
 `serve --bind 0.0.0.0` (port `MX_PORT`, default 8090; root `MX_ROOT`, default `~/motion-extractor`).
 The unit is only created if missing; lingering is enabled so the service keeps running after
-logout. The host needs ffmpeg.
+logout. The host needs ffmpeg; the script warns if firewalld has the port closed.
 
 ## 7. CI / CD (GitHub Actions)
 

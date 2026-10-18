@@ -111,6 +111,12 @@ if ! remote "systemctl --user is-active --quiet $service"; then
   exit 1
 fi
 
+# firewalld (Fedora, RHEL, …) rejects connections to closed ports; browsers then report the host as
+# unreachable. Querying works without root.
+if remote "systemctl is-active --quiet firewalld && ! firewall-cmd --query-port=$port/tcp >/dev/null 2>&1"; then
+  echo "warning: port $port is not open in firewalld on $host, so other machines cannot connect. Open it with:" >&2
+  echo "  sudo firewall-cmd --add-port=$port/tcp --permanent && sudo firewall-cmd --reload" >&2
+fi
+
 echo
 echo "Motion Extractor is running: http://${host#*@}:$port/"
-echo "(Open port $port in the host's firewall if needed, e.g. firewall-cmd --add-port=$port/tcp --permanent && firewall-cmd --reload.)"

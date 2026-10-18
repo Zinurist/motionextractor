@@ -76,15 +76,8 @@ pub fn run(args: ServeArgs) -> Result<()> {
             .await
             .with_context(|| format!("cannot listen on {}:{}", args.bind, args.port))?;
         let addr = listener.local_addr()?;
-        let host = if addr.ip().is_unspecified() {
-            "localhost".to_owned()
-        } else {
-            addr.ip().to_string()
-        };
-        println!(
-            "Motion Extractor listening on http://{host}:{}/",
-            addr.port()
-        );
+        // The actual address (0.0.0.0 when listening on all interfaces), IPv6 in brackets.
+        println!("Motion Extractor listening on http://{addr}/");
         let config = ServerConfig {
             mode: Mode::Server,
             token: None,
