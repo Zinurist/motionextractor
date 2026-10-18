@@ -114,7 +114,8 @@ pub async fn info(State(st): State<Shared>) -> ApiResult<Value> {
             .collect(),
     };
     Ok(Json(json!({
-        "version": env!("CARGO_PKG_VERSION"),
+        // Versions are X.Y (see CLAUDE.md); the patch number of the crate version is always 0.
+        "version": concat!(env!("CARGO_PKG_VERSION_MAJOR"), ".", env!("CARGO_PKG_VERSION_MINOR")),
         "mode": st.config.mode,
         "ffmpeg": ffmpeg,
         "roots": roots,

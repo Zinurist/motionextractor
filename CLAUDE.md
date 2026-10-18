@@ -600,7 +600,7 @@ dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browse
   - `scripts/fetch-ffmpeg.sh <target> crates/app/binaries` downloads static GPL builds (BtbN for
     Linux/Windows x86_64 and arm64, martin-riedl.de for macOS with SHA-256 check) named `ffmpeg-<target>` for
     `tauri.ffmpeg.conf.json`.
-- **`.github/workflows/release.yml`** (tag `v*`, or manual for a dry run): `build.yml` with the tag as
+- **`.github/workflows/release.yml`** (tag `vX.Y`, or manual for a dry run): a version check, then `build.yml` with `X.Y` as
   label, then a **draft** GitHub release with all files (published by hand).
 - **`.github/workflows/nightly.yml`** (daily 02:17 UTC, or manual): if `main` moved since the last
   nightly (the `nightly` tag), `build.yml` with label `nightly-YYYYMMDD-<sha>`, then the rolling
@@ -615,8 +615,15 @@ dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browse
   editing only that file (and the copy in the README).
 - Workflows are checked with `actionlint` (part of `mise run lint`).
 
-**Releasing:** bump `version` in the root `Cargo.toml` (and `web`/`e2e` `package.json`), commit,
-tag `vX.Y.Z`, push the tag, review and publish the draft release.
+**Versioning:** versions have two numbers, `X.Y` (tags and releases `vX.Y`). `X` is increased for
+breaking changes of the HTTP/WebSocket API or the CLI, otherwise `Y`. Cargo and npm require three
+numbers, so the manifests say `X.Y.0` (the patch number is always 0); `motion-extractor --version`
+and `GET /api/info` report `X.Y`.
+
+**Releasing:** `scripts/set-version.sh X.Y` (sets the version in `Cargo.toml`, `Cargo.lock` and the
+`web`/`e2e` packages), merge that through a PR, tag `vX.Y` on `main`, push the tag, review and
+publish the draft release. `release.yml` rejects tags that are not `vX.Y` or do not match the
+workspace version; file names carry `X.Y`.
 
 ## 8. Conventions
 
