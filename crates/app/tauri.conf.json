@@ -28,11 +28,14 @@
       "icons/icon.ico"
     ],
     "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
       "deb": {
-        "depends": ["ffmpeg"]
+        "depends": ["ffmpeg", "gstreamer1.0-plugins-good"]
       },
       "rpm": {
-        "depends": ["/usr/bin/ffmpeg"]
+        "depends": ["/usr/bin/ffmpeg", "gstreamer1-plugins-good"]
       }
     },
     "macOS": {

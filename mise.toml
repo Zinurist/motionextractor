@@ -57,7 +57,7 @@ depends = ["web:build"]
 run = "cargo run -p motion-extractor --"
 
 [tasks.serve]
-description = "Run the web UI without a window at http://127.0.0.1:8090/ (extra arguments are passed on)"
+description = "Run the web UI without a window at http://127.0.0.1:8090/ (arguments after --, e.g. -- --root ~/Videos)"
 depends = ["web:build"]
 run = "cargo run -p motion-extractor --no-default-features -- serve"
 

@@ -38,9 +38,9 @@ motion-extractor render --help                  # all options
 
 | System | Packages |
 |---|---|
-| Fedora | `sudo dnf install ffmpeg gcc pkgconf-pkg-config` (ffmpeg from RPM Fusion), desktop: `webkit2gtk4.1-devel gtk3-devel librsvg2-devel libxdo-devel dbus-devel libappindicator-gtk3-devel` |
-| Debian / Ubuntu | `sudo apt install ffmpeg build-essential pkg-config`, desktop: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libdbus-1-dev libayatana-appindicator3-dev` |
-| Arch | `sudo pacman -S ffmpeg base-devel`, desktop: `webkit2gtk-4.1 gtk3 librsvg xdotool dbus libappindicator-gtk3` |
+| Fedora | `sudo dnf install ffmpeg gcc pkgconf-pkg-config` (ffmpeg from RPM Fusion), desktop: `webkit2gtk4.1-devel gtk3-devel librsvg2-devel libxdo-devel dbus-devel libappindicator-gtk3-devel gstreamer1-plugins-good` |
+| Debian / Ubuntu | `sudo apt install ffmpeg build-essential pkg-config`, desktop: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libdbus-1-dev libayatana-appindicator3-dev gstreamer1.0-plugins-good` |
+| Arch | `sudo pacman -S ffmpeg base-devel`, desktop: `webkit2gtk-4.1 gtk3 librsvg xdotool dbus libappindicator-gtk3 gst-plugins-good` |
 | macOS | `xcode-select --install`, `brew install ffmpeg` |
 | Windows | [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktop development with C++"), ffmpeg (e.g. `choco install ffmpeg`); WebView2 ships with Windows 10/11 |
 
@@ -50,7 +50,8 @@ motion-extractor render --help                  # all options
 mise install              # Node.js, Rust, actionlint
 mise run build            # target/release/motion-extractor (desktop app + CLI)
 mise run build:headless   # the same without the desktop window: no GTK/webview libraries needed
-mise run serve            # web UI at http://127.0.0.1:8090/
+mise run serve            # web UI at http://127.0.0.1:8090/ for videos in the repository directory
+mise run serve -- --root ~/Videos   # … for videos in ~/Videos (arguments after --)
 mise run test             # tests (mise tasks lists everything)
 ```
 
