@@ -3,7 +3,10 @@
 use std::path::Path;
 
 fn main() {
-    let dist = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/dist");
+    // Read at run time: `env!` would bake in the path of the checkout the script was compiled in,
+    // which breaks when a target directory is reused from another location.
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    let dist = Path::new(&manifest_dir).join("../../web/dist");
     println!("cargo:rerun-if-changed={}", dist.display());
     if !dist.join("index.html").exists() {
         std::fs::create_dir_all(&dist).expect("create web/dist");
