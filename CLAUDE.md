@@ -315,7 +315,8 @@ supports `serve`, `render` and `probe`.
   `http://127.0.0.1:<port>/?token=…` (`WebviewUrl::External`; no Tauri IPC is used, the UI talks to
   the server like any browser).
 - Native dialogs come from `tauri-plugin-dialog` (blocking calls from server worker threads; the
-  plugin runs them on the UI thread). Files dropped onto the window are opened via the session;
+  plugin runs them on the UI thread). Filters list each extension in lower and upper case (GTK matches
+  patterns case-sensitively, which hid e.g. `.MOV` from phones) plus an "All files" choice. Files dropped onto the window are opened via the session;
   failures become an `error` event (toast).
 - `--smoke-test` (hidden) exits 0 as soon as the UI's JavaScript connects to the WebSocket
   (`ServerConfig::on_connect`), 1 after 60 s — used by CI on every OS.
