@@ -2047,7 +2047,7 @@ dependencies = [
 
 [[package]]
 name = "motion-extractor"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2091,7 +2091,7 @@ dependencies = [
 
 [[package]]
 name = "mx-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "proptest",
  "rayon",
@@ -2102,7 +2102,7 @@ dependencies = [
 
 [[package]]
 name = "mx-engine"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "mx-core",
  "mx-media",
@@ -2115,7 +2115,7 @@ dependencies = [
 
 [[package]]
 name = "mx-media"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "mx-core",
  "mx-media",
@@ -2128,7 +2128,7 @@ dependencies = [
 
 [[package]]
 name = "mx-server"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "dunce",
