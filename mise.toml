@@ -29,9 +29,9 @@ sources = ["e2e/package-lock.json"]
 outputs = ["e2e/node_modules/.package-lock.json"]
 
 [tasks."e2e:browsers"]
-description = "Download the Playwright browsers (Chromium, WebKit)"
+description = "Download the Playwright browsers in MX_BROWSERS (default: chromium)"
 depends = ["e2e:install"]
-run = "npx --prefix e2e playwright install chromium webkit"
+run = "node e2e/install-browsers.mjs"
 
 [tasks.build]
 description = "Release build of the app (desktop + CLI)"

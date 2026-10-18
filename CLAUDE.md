@@ -588,7 +588,8 @@ mise run ci               # lint + test + e2e
 ```
 
 Task dependencies build the web UI (`web:build`, embedded by `crates/server`) and install npm
-dependencies (`web:install`, `e2e:install`) and Playwright browsers (`e2e:browsers`) as needed.
+dependencies (`web:install`, `e2e:install`) and the Playwright browsers in `MX_BROWSERS`
+(`e2e:browsers`, via `e2e/install-browsers.mjs`; default Chromium) as needed.
 
 **Deploying to a server:** `scripts/quick-deploy.sh HOST` (manual use, not run by CI) cross-compiles
 the headless binary for a Linux host (architecture and glibc version detected over SSH; `cargo
@@ -603,9 +604,11 @@ logout. The host needs ffmpeg; the script warns if firewalld has the port closed
 - **`.github/workflows/ci.yml`** (push to `main`, pull requests, manual), tools via `jdx/mise-action`:
   - *Lint* (Ubuntu): `mise run lint` and `mise run test:web`.
   - *Test* matrix — Ubuntu 24.04 (Chromium + WebKit), Windows (Chromium), macOS (Chromium + WebKit):
-    install ffmpeg (apt / choco / brew), `mise run test:rust`, browsers with system dependencies,
+    install ffmpeg (apt / choco / brew), `mise run test:rust`, the matrix's browsers (with system
+    dependencies on Linux only — on Windows `--with-deps` would spend minutes adding Media Foundation),
     `mise run e2e`, desktop smoke test (`--smoke-test`, under `xvfb-run` on Linux). Reports and traces
     are uploaded on failure.
+    Test builds use `line-tables-only` debug info and, on Windows, the `rust-lld` linker (faster links).
 - **`.github/workflows/build.yml`** (reusable, input `label`): the platform build matrix, on native
   runners for each architecture —
   Linux x86_64 and arm64 (Ubuntu 22.04 / 22.04-arm for glibc compatibility): `.deb` and `.rpm`

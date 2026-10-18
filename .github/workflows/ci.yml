@@ -44,6 +44,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       MX_BROWSERS: ${{ matrix.browsers }}
+      # Faster test builds: less debug info (PDB writing makes MSVC links slow) and LLD on Windows.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld.exe
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v5
@@ -65,12 +69,15 @@ jobs:
       - name: Rust tests
         run: mise run test:rust
 
-      - name: Install browsers and their system dependencies
+      # System dependencies only on Linux: on Windows `--with-deps` adds the Media Foundation
+      # feature to the runner image, which takes over 3 minutes.
+      - name: Install browsers (and their system dependencies on Linux)
         shell: bash
         run: |
           npm ci --prefix e2e
-          IFS=',' read -ra browsers <<< "$MX_BROWSERS"
-          npx --prefix e2e playwright install --with-deps "${browsers[@]}"
+          deps=()
+          if [ "$RUNNER_OS" = Linux ]; then deps=(--with-deps); fi
+          node e2e/install-browsers.mjs "${deps[@]}"
 
       - name: End-to-end tests
         run: mise run e2e
