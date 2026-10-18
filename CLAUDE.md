@@ -603,7 +603,9 @@ logout. The host needs ffmpeg.
   Linux x86_64 and arm64 (Ubuntu 22.04 / 22.04-arm for glibc compatibility): `.deb` and `.rpm`
   (system ffmpeg) and an `.AppImage` with bundled ffmpeg; Windows x86_64: `.msi` and NSIS
   `-setup.exe` with bundled ffmpeg; Windows arm64 (`windows-11-arm`): NSIS `-setup.exe` only (WiX
-  cannot build ARM64 MSIs); macOS: universal (arm64 + x86_64) `.dmg` with bundled (lipo'd) ffmpeg;
+  cannot build ARM64 MSIs); both Windows targets also get a portable zip
+  (`motion-extractor-<label>-<target>-portable.zip`: a folder with the desktop exe, `ffmpeg.exe` and
+  `ffprobe.exe`; needs the WebView2 runtime, which ships with Windows 10/11); macOS: universal (arm64 + x86_64) `.dmg` with bundled (lipo'd) ffmpeg;
   plus headless CLI archives
   (`motion-extractor-cli-<label>-<target>`, built `--no-default-features`). File names carry the
   label instead of the crate version. Artifacts `dist-<target>` are kept for 7 days.
