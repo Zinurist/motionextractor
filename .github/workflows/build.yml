@@ -81,6 +81,14 @@ jobs:
           else
             $tauri build --target "$TARGET" --config tauri.ffmpeg.conf.json
           fi
+          if [ "$RUNNER_OS" = Windows ]; then
+            # Portable build: the desktop exe with ffmpeg next to it (where Ffmpeg::locate finds
+            # it). Copied now, before the headless CLI build replaces the exe in target/.
+            portable=../../target/portable/motion-extractor
+            mkdir -p "$portable"
+            cp ../../target/"$TARGET"/release/motion-extractor.exe "$portable/"
+            for tool in ffmpeg ffprobe; do cp binaries/"$tool-$TARGET".exe "$portable/$tool.exe"; done
+          fi
 
       - name: Build the headless CLI
         shell: bash
@@ -116,6 +124,7 @@ jobs:
           cli=motion-extractor-cli-${LABEL}-${TARGET}
           if [ "$RUNNER_OS" = Windows ]; then
             (cd target/cli && 7z a "../../dist/$cli.zip" motion-extractor.exe)
+            (cd target/portable && 7z a "../../dist/motion-extractor-${LABEL}-${TARGET}-portable.zip" motion-extractor)
           else
             tar -czf "dist/$cli.tar.gz" -C target/cli motion-extractor
           fi
