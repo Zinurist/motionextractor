@@ -564,7 +564,8 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 Tooling and tasks are defined in `mise.toml` ([mise](https://mise.jdx.dev)): `mise install` installs
 the pinned Node.js, Rust (stable, with rustfmt/clippy) and actionlint; `mise tasks` lists the tasks.
 Not managed by mise (system prerequisites): ffmpeg + ffprobe (with libx264, libx265, libvpx) on
-`PATH`, and the Tauri system libraries for the desktop app. The plain `cargo`/`npm` commands behind
+`PATH`, a C compiler with `pkg-config`, and the Tauri system libraries for the desktop app (per-OS
+package lists in the README's *Dependencies* section; the headless build needs none of them). The plain `cargo`/`npm` commands behind
 each task keep working without mise. CI runs the same tasks.
 
 ```
