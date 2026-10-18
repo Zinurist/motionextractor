@@ -14,7 +14,7 @@ use crate::timespec::TimeSpec;
 #[derive(Debug, Parser)]
 #[command(
     name = "motion-extractor",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION_MAJOR"), ".", env!("CARGO_PKG_VERSION_MINOR")),
     about = "Highlight the motion in videos"
 )]
 pub struct Cli {
