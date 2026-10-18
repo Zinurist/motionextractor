@@ -628,7 +628,9 @@ logout. The host needs ffmpeg; the script warns if firewalld has the port closed
     Linux/Windows x86_64 and arm64, martin-riedl.de for macOS with SHA-256 check) named `ffmpeg-<target>` for
     `tauri.ffmpeg.conf.json`.
 - **`.github/workflows/release.yml`** (tag `vX.Y`, or manual for a dry run): a version check, then `build.yml` with `X.Y` as
-  label, then a **draft** GitHub release with all files (published by hand).
+  label, then a **draft** GitHub release with all files (published by hand). Its notes are the
+  disclaimer plus GitHub's generated changelog since the previous `vX.Y` tag (not since the rolling
+  `nightly`, which GitHub would pick by itself); the first release just says so.
 - **`.github/workflows/nightly.yml`** (daily 02:17 UTC, or manual): if `main` moved since the last
   nightly (the `nightly` tag), `build.yml` with label `nightly-YYYYMMDD-<sha>`, then the rolling
   `nightly` pre-release (not marked latest) is deleted and recreated with the new files — storage
