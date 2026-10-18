@@ -4,7 +4,9 @@
 
 [tools]
 node = "22"
-rust = { version = "stable", components = "rustfmt,clippy" }
+# Pinned so every CI run uses the same toolchain (it is part of the Rust build cache key); bump it
+# deliberately in its own PR.
+rust = { version = "1.99.1", components = "rustfmt,clippy" }
 actionlint = "latest"
 # Used by actionlint to check the scripts in the workflows (as on the CI runners).
 shellcheck = "latest"
