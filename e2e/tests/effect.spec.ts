@@ -71,9 +71,12 @@ test('bloom adds a glow around motion', async ({ app }) => {
 test('overlay draws the motion on top of the original video', async ({ app }) => {
   await atFrame10(app);
   let rev = await currentRev(app);
-  await expect(app.getByTestId('background-brightness')).toBeDisabled();
+  // Brightness and opacity belong to the original background only.
+  await expect(app.getByTestId('background-brightness')).toBeHidden();
+  await expect(app.getByTestId('overlay-opacity')).toBeHidden();
   await app.getByTestId('background-original').check();
   rev = await expectNewerRev(app, rev);
+  await expect(app.getByTestId('background-brightness')).toBeVisible();
   // The square (present in both frames) now shows the original white instead of black.
   await expectPixel(app, OVERLAP, ROW, [255, 255, 255]);
   await app.getByTestId('color').fill('#00ff00');
@@ -87,6 +90,7 @@ test('overlay draws the motion on top of the original video', async ({ app }) =>
   await expectPixel(app, EDGE, ROW, [0, 128, 0]);
   await app.getByTestId('background-solid').check();
   await expectPixel(app, OVERLAP, ROW, [0, 0, 0]);
+  await expect(app.getByTestId('background-brightness')).toBeHidden();
 });
 
 test('classic mode averages the frame with the inverted reference', async ({ app }) => {
@@ -162,17 +166,24 @@ test('motion can show the original video', async ({ app }) => {
   await app.getByTestId('motion-fill-original').check();
   await expectNewerRev(app, rev);
   await expect(app.getByTestId('motion-fill-hint')).toBeVisible();
-  await expect(app.getByTestId('color')).toBeDisabled();
+  // No motion color with this fill.
+  await expect(app.getByTestId('color')).toBeHidden();
   // Leading edge (only in frame 10): the original's white square shows through.
   await expectPixel(app, squareX(10) + SQUARE.size - 1, ROW, [255, 255, 255]);
   // Trailing edge (only in frame 9): what frame 10 has there, black.
   await expectPixel(app, squareX(9), ROW, [0, 0, 0]);
   // Static parts: the background color.
   await expectPixel(app, 2, 2, [0, 0, 128]);
-  // "Original background" would just be the video: not offered with this fill.
-  await expect(app.getByTestId('background-original')).toBeDisabled();
-  await app.getByTestId('motion-fill-color').check();
-  await expect(app.getByTestId('background-original')).toBeEnabled();
+  // Over the original background, dimmed: only the moving parts stay at full brightness.
+  rev = await currentRev(app);
   await app.getByTestId('background-original').check();
-  await expect(app.getByTestId('motion-fill-original')).toBeDisabled();
+  rev = await expectNewerRev(app, rev);
+  await setNumber(app, 'background-brightness-value', 0.25);
+  await expectNewerRev(app, rev);
+  await expectPixel(app, squareX(10) + SQUARE.size - 1, ROW, [255, 255, 255]);
+  // The square's static part (in both frames): white, dimmed to a quarter.
+  await expectPixel(app, OVERLAP, ROW, [64, 64, 64]);
+  await expect(app.getByTestId('motion-fill-original')).toBeChecked();
+  await app.getByTestId('motion-fill-color').check();
+  await expect(app.getByTestId('color')).toBeVisible();
 });

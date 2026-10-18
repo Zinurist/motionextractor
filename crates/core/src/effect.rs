@@ -468,6 +468,27 @@ mod tests {
     }
 
     #[test]
+    fn original_motion_over_dimmed_original() {
+        let mut refr = Frame::filled(10, 10, [200, 200, 200]);
+        refr.fill_rect(0, 0, 3, 3, [0, 0, 0]);
+        let mut cur = Frame::filled(10, 10, [200, 200, 200]);
+        cur.fill_rect(0, 0, 3, 3, [250, 120, 40]);
+        let p = EffectParams {
+            motion_fill: MotionFill::Original,
+            background: Background::Original,
+            background_brightness: 0.25,
+            ..Default::default()
+        };
+        let out = process(&cur, Some(&refr), &p).unwrap();
+        assert_eq!(
+            out.pixel(1, 1),
+            [250, 120, 40],
+            "moving parts at full brightness"
+        );
+        assert_eq!(out.pixel(8, 8), [50, 50, 50], "everything else dimmed");
+    }
+
+    #[test]
     fn bloom_glows_around_motion() {
         let (cur, refr) = square_frames(100, 100, (45, 45), (45, 45), 0);
         let mut cur = cur;
