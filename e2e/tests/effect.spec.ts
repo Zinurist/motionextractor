@@ -154,8 +154,10 @@ test('solid background color', async ({ app }) => {
   await expectPixel(app, 2, 2, [32, 48, 64]);
   await expectPixel(app, EDGE, ROW, [255, 255, 255]);
   // The picker belongs to the solid background only.
-  await app.getByTestId('background-original').check();
+  await app.getByTestId('background-original').click();
   await expect(app.getByTestId('background-color')).toBeHidden();
+  // A clicked radio button gets no focus outline (only keyboard focus shows one).
+  await expect(app.getByTestId('background-original')).toHaveCSS('outline-style', 'none');
 });
 
 test('motion can show the original video', async ({ app }) => {
