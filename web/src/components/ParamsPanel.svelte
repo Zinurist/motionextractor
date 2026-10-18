@@ -214,31 +214,32 @@
         />
         Color
       </label>
-      <label title={fx.background === 'original' ? 'Needs a solid background color' : ''}>
+      <label>
         <input
           type="radio"
           name="fill"
           checked={fx.motion_fill === 'original'}
-          disabled={disabled || fx.background === 'original'}
+          {disabled}
           data-testid="motion-fill-original"
           onchange={() => store.updatePreset({ effect: { motion_fill: 'original' } })}
         />
         Original video
       </label>
     </div>
-    <div class="row">
-      <label for="color">Motion color</label>
-      <input
-        id="color"
-        type="color"
-        value={fx.color}
-        disabled={disabled || fx.motion_fill === 'original'}
-        data-testid="color"
-        oninput={(e) => store.updatePreset({ effect: { color: e.currentTarget.value } })}
-      />
-      <span class="mono muted">{fx.color}</span>
-    </div>
-    {#if fx.motion_fill === 'original'}
+    {#if fx.motion_fill === 'color'}
+      <div class="row">
+        <label for="color">Motion color</label>
+        <input
+          id="color"
+          type="color"
+          value={fx.color}
+          {disabled}
+          data-testid="color"
+          oninput={(e) => store.updatePreset({ effect: { color: e.currentTarget.value } })}
+        />
+        <span class="mono muted">{fx.color}</span>
+      </div>
+    {:else}
       <p class="muted hint" data-testid="motion-fill-hint">Moving parts show the original video.</p>
     {/if}
   </section>
@@ -307,12 +308,12 @@
         />
         Solid color
       </label>
-      <label title={fx.motion_fill === 'original' ? 'Not with motion showing the original' : ''}>
+      <label>
         <input
           type="radio"
           name="bg"
           checked={fx.background === 'original'}
-          disabled={disabled || fx.motion_fill === 'original'}
+          {disabled}
           data-testid="background-original"
           onchange={() => store.updatePreset({ effect: { background: 'original' } })}
         />
@@ -333,29 +334,30 @@
         />
         <span class="mono muted">{fx.background_color}</span>
       </div>
+    {:else}
+      <Slider
+        label="Brightness"
+        testid="background-brightness"
+        defaultValue={D.background_brightness}
+        min={0}
+        max={1}
+        step={0.01}
+        value={fx.background_brightness}
+        {disabled}
+        onChange={(v) => store.updatePreset({ effect: { background_brightness: v } })}
+      />
+      <Slider
+        label="Opacity"
+        testid="overlay-opacity"
+        defaultValue={D.overlay_opacity}
+        min={0}
+        max={1}
+        step={0.01}
+        value={fx.overlay_opacity}
+        {disabled}
+        onChange={(v) => store.updatePreset({ effect: { overlay_opacity: v } })}
+      />
     {/if}
-    <Slider
-      label="Brightness"
-      testid="background-brightness"
-      defaultValue={D.background_brightness}
-      min={0}
-      max={1}
-      step={0.01}
-      value={fx.background_brightness}
-      disabled={disabled || fx.background !== 'original'}
-      onChange={(v) => store.updatePreset({ effect: { background_brightness: v } })}
-    />
-    <Slider
-      label="Opacity"
-      testid="overlay-opacity"
-      defaultValue={D.overlay_opacity}
-      min={0}
-      max={1}
-      step={0.01}
-      value={fx.overlay_opacity}
-      disabled={disabled || fx.background !== 'original'}
-      onChange={(v) => store.updatePreset({ effect: { overlay_opacity: v } })}
-    />
   </section>
 </aside>
 

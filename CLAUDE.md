@@ -103,7 +103,11 @@ Per pixel (values normalised to `0..1`, sRGB-encoded):
    - Background **original video** (overlay mode): `bg = C × background_brightness` (default `1.0`,
      lower values dim the original so the motion pops), then
      `out = lerp(bg, F, m' × overlay_opacity) + bloom` — only motion is drawn on top of the original.
-     (Original background with original fill would just be the video; the UI does not offer it.)
+     With the original fill as well, the moving parts show the video at full brightness while
+     everything else is dimmed by `background_brightness` (a "spotlight" on the motion).
+   - The UI shows only the controls of the selected options: the motion color for the color fill,
+     the background color for the solid background, brightness and opacity for the original
+     background.
    - `"background": "black"` from older presets is read as `"color"`.
    - Output is clamped to `0..1`.
 
