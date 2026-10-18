@@ -54,6 +54,12 @@ if command -v mise >/dev/null; then
   mise run web:build
   mise exec zig@0.14 cargo:cargo-zigbuild -- bash -c "${build[*]}"
 else
+  for tool in zig cargo-zigbuild; do
+    if ! command -v "$tool" >/dev/null; then
+      echo "error: $tool not found; install mise (https://mise.jdx.dev) or zig and cargo-zigbuild (cargo install --locked cargo-zigbuild)" >&2
+      exit 1
+    fi
+  done
   npm ci --prefix web && npm --prefix web run build
   bash -c "${build[*]}"
 fi
