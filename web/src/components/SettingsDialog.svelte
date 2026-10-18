@@ -94,6 +94,18 @@
       data-testid="settings-jpeg"
     />
 
+    <label for="audio">Audio</label>
+    <label class="check">
+      <input
+        id="audio"
+        type="checkbox"
+        checked={store.audioEnabled}
+        data-testid="settings-audio"
+        onchange={(e) => store.setAudioEnabled(e.currentTarget.checked)}
+      />
+      play the video's audio (this browser, applies at once)
+    </label>
+
     <label for="ffmpeg">ffmpeg</label>
     <input
       id="ffmpeg"

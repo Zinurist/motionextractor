@@ -51,6 +51,29 @@ test('videos without audio have no mute button', async ({ app, server }) => {
   expect(await audioState(app)).toBeNull();
 });
 
+test('audio playback can be turned off, remembered', async ({ app }) => {
+  await expect(app.getByTestId('mute')).toBeVisible();
+  await app.getByTestId('open-settings').click();
+  await expect(app.getByTestId('settings-audio')).toBeChecked();
+  await app.getByTestId('settings-audio').uncheck();
+  // Applies at once: no audio player, no audio controls.
+  await expect(app.getByTestId('mute')).toBeHidden();
+  expect(await audioState(app)).toBeNull();
+  await app.reload();
+  await expect(app.getByTestId('viewer')).toHaveAttribute('data-frame', '0');
+  await expect(app.getByTestId('mute')).toBeHidden();
+  expect(await audioState(app)).toBeNull();
+  // Playback works without audio.
+  await app.getByTestId('play').click();
+  await expect(app.getByTestId('play')).toHaveAttribute('data-playing', 'false', {
+    timeout: 10_000,
+  });
+  await app.getByTestId('open-settings').click();
+  await app.getByTestId('settings-audio').check();
+  await expect(app.getByTestId('mute')).toBeVisible();
+  expect((await audioState(app))!.src).toContain('/api/audio');
+});
+
 test('volume from 0 to 200 % (boost), remembered', async ({ app }) => {
   const volume = app.getByTestId('volume');
   await expect(app.getByTestId('volume-value')).toHaveText('100%');
