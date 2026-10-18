@@ -338,6 +338,7 @@ fn serve_on_all_interfaces_needs_no_token() {
         .read_line(&mut line)
         .unwrap();
     let url = line.trim().rsplit(' ').next().unwrap().to_owned();
+    assert!(url.starts_with("http://0.0.0.0:"), "{line}");
     assert!(!url.contains("token"), "{line}");
     let port = url.trim_end_matches('/').rsplit(':').next().unwrap();
     let info = http_get(&format!("127.0.0.1:{port}"), "/api/info");
