@@ -37,6 +37,7 @@ type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]>
 
 const MUTED_KEY = 'mx-muted';
 const VOLUME_KEY = 'mx-volume';
+const AUDIO_KEY = 'mx-audio';
 /** Maximum volume: 200 % (boost above the original level). */
 export const MAX_VOLUME = 2;
 
@@ -57,6 +58,14 @@ function loadMuted(): boolean {
   }
 }
 
+function loadAudioEnabled(): boolean {
+  try {
+    return localStorage.getItem(AUDIO_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
 class AppStore {
   info = $state<Info | null>(null);
   video = $state<VideoState | null>(null);
@@ -73,6 +82,11 @@ class AppStore {
   muted = $state(loadMuted());
   /** Playback volume, 0–2 (1 = original level; above 1 boosts through a gain node). */
   volume = $state(loadVolume());
+  /**
+   * Whether to play the video's audio at all (per browser). Off: no audio player is created, for
+   * systems whose audio stack misbehaves (muting still opens an audio stream).
+   */
+  audioEnabled = $state(loadAudioEnabled());
   viewMode = $state<ViewMode>('output');
   shown = $state<Record<View, Shown | null>>({ output: null, original: null });
   toasts = $state<Toast[]>([]);
@@ -152,7 +166,7 @@ class AppStore {
 
   /** Prepares an audio element for the opened video (if it has audio). */
   private setupAudio(): void {
-    const path = this.video?.info.has_audio ? this.video.info.path : null;
+    const path = this.hasAudio ? this.video!.info.path : null;
     if (path === this.audioPath && (this.audio || !path)) return;
     this.audio?.pause();
     this.audio = null;
@@ -389,6 +403,18 @@ class AppStore {
     }
   }
 
+  /** Turns audio playback on or off and remembers it. */
+  setAudioEnabled(enabled: boolean): void {
+    this.audioEnabled = enabled;
+    this.pause();
+    this.setupAudio();
+    try {
+      localStorage.setItem(AUDIO_KEY, enabled ? '1' : '0');
+    } catch {
+      // Storage may be unavailable; the choice still applies for this session.
+    }
+  }
+
   /** Sets the volume (0–2) and remembers it. */
   setVolume(v: number): void {
     this.volume = clamp(Math.round(v * 100) / 100, 0, MAX_VOLUME);
@@ -430,8 +456,9 @@ class AppStore {
     }
   }
 
+  /** The video has audio and audio playback is enabled. */
   get hasAudio(): boolean {
-    return !!this.video?.info.has_audio;
+    return this.audioEnabled && !!this.video?.info.has_audio;
   }
 
   /** State of the audio player, for E2E tests. */

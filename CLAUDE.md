@@ -139,7 +139,10 @@ Optional, lower priority:
 - Playback at the video's frame rate, **with the video's audio**: mute toggle and a volume slider
   from 0 to 200 % (double-click: 100 %), both remembered per browser. Volumes above 100 % go through
   a Web Audio gain node (created on the first play, as browsers require a user gesture); without
-  Web Audio the element volume is used (max. 100 %). The clock follows the audio while it plays (wall clock without audio, or after the
+  Web Audio the element volume is used (max. 100 %). Audio playback can be switched off entirely in the Settings dialog
+  ("Audio", per browser, applies at once): then no audio player is created at all — for systems
+  whose audio stack misbehaves (on one Windows PC, an audio stream in the Edge engine reset the
+  machine; muting is not enough, it still opens the stream). The clock follows the audio while it plays (wall clock without audio, or after the
   audio ends). Scrubbing is silent.
 - **Buffering instead of freezing**: if the shown frame trails the playhead by more than 3 frames
   (decoding or processing can't keep up), playback pauses the clock and the audio and shows
@@ -553,7 +556,7 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 |---|---|
 | Open via file browser, navigation, non-video errors, connection state | `open.spec.ts` |
 | Timeline scrubbing, frame stepping, keyboard shortcuts, playback, cache fill, no loading-badge flicker during playback, buffering when decoding is slower than playback (ffmpeg throttled by `tests/support/slow-ffmpeg.mjs`) | `playback.spec.ts` |
-| Audio playback along with the video, mute and volume 0–200 % (remembered), no audio controls without audio | `audio.spec.ts` |
+| Audio playback along with the video, mute and volume 0–200 % (remembered), no audio controls without audio, audio playback switched off (remembered) | `audio.spec.ts` |
 | Rolling offset (frames/seconds, unit switch, negative, zero rejected), fixed reference | `comparison.spec.ts` |
 | Threshold/gain/gamma, color picker, bloom, solid background color, motion showing the original, overlay (brightness, opacity), classic mode, metric, denoise, slider reset buttons | `effect.spec.ts` |
 | Original/split/side-by-side views, split handle, zoom/pan/fit | `views.spec.ts` |
