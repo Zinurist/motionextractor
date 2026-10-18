@@ -5,7 +5,7 @@
 > build/test commands or conventions must be reflected here in the same change.
 > Keep it free of anything specific to a particular developer machine — this is an open source project.
 
-Status: **M1–M6 done** (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
+Status: **1.0 released**, M1–M6 done (effect pipeline, ffmpeg integration, CLI, preview engine, HTTP/WebSocket
 server, web UI, E2E suite, desktop app, CI/CD). Sections describe
 the target state; the [Roadmap](#9-roadmap) tracks what is implemented.
 
