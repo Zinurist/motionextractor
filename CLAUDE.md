@@ -324,7 +324,9 @@ supports `serve`, `render` and `probe`.
   parent console (`AttachConsole`).
 - Configuration: `crates/app/tauri.conf.json` (identifier `io.github.motionextractor`, icons in
   `crates/app/icons/` generated from `icon.svg` with `tauri icon`). Linux packages depend on the
-  system ffmpeg (`.deb`: `ffmpeg`, `.rpm`: `/usr/bin/ffmpeg`). `tauri.ffmpeg.conf.json` is a
+  system ffmpeg (`.deb`: `ffmpeg`, `.rpm`: `/usr/bin/ffmpeg`) and the GStreamer "good" plugins (WebKitGTK
+  plays the audio through GStreamer; without an audio sink the web process crashes when a video
+  is opened). The AppImage bundles GStreamer (`bundleMediaFramework`). `tauri.ffmpeg.conf.json` is a
   config overlay used by release builds to bundle `binaries/ffmpeg` and `binaries/ffprobe` as
   sidecars (placed next to the executable, where `Ffmpeg::locate` finds them).
 - Tauri CLI: `web/node_modules/.bin/tauri` (dev dependency of `web`); run it from `crates/app`.
@@ -577,7 +579,7 @@ each task keep working without mise. CI runs the same tasks.
 mise run build            # release build (desktop + CLI) → target/release/motion-extractor
 mise run build:headless   # release build without the desktop window (serve/render/probe)
 mise run desktop [-- FILE]   # run the desktop app
-mise run serve [-- ARGS]     # web UI without a window at http://127.0.0.1:8090/
+mise run serve [-- ARGS]     # web UI without a window at http://127.0.0.1:8090/ (e.g. -- --root ~/Videos)
 mise run dev              # Vite dev server with hot reload (proxies /api to a running `serve`)
 mise run bundle           # installers for this platform (Tauri)
 mise run test             # Rust (needs ffmpeg) + web unit/integration tests
