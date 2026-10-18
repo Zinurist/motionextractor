@@ -43,9 +43,12 @@ interactively with fast scrubbing, and rendered to a video file via ffmpeg.
 
 - Open any video ffmpeg can decode. Opening via: native file dialog (desktop), drag & drop onto the
   window (desktop), server-side file browser (server mode), path given on the command line.
-- **Server mode: upload and download.** The file browser's "Upload video…" sends a local file to
-  the directory being browsed (with progress) and opens it; names that already exist get a
-  " (2)" suffix instead of overwriting. Files in the browser and finished renders (render dialog)
+- **Server mode: upload and download.** The file browser's "Upload videos…" sends one or more local
+  files (any type — no file-type filter, so e.g. upper-case `.MOV` files from phones are not
+  hidden) to the directory being browsed, one after another with progress; a single upload is
+  opened right away, after several the listing stays open to pick one. Names that already exist get
+  a " (2)" suffix instead of overwriting. The browser shows the free space of the directory's
+  filesystem. Files in the browser and finished renders (render dialog)
   can be downloaded. Both stay within the `--root` directories.
 - The video is probed with `ffprobe`: resolution, frame rate, frame count, duration, audio presence.
 - Frames are addressed by **index** `0..N-1`. The video is treated as constant frame rate (CFR) at
@@ -375,7 +378,7 @@ root).
 | `POST /api/render/command` `{output}` | ffmpeg command the render would run → `{command}` |
 | `GET /api/frame/{i}?view=output\|original&full=false` | Frame as PNG (preview cache, or decoded at full resolution) |
 | `GET /api/audio` | The video's audio as WAV (16-bit stereo 48 kHz, HTTP range requests supported); 404 without audio |
-| `GET /api/fs/list?path=` | Directory listing `{path, parent, entries: [{name, path, dir, size}]}` (hidden files skipped) |
+| `GET /api/fs/list?path=` | Directory listing `{path, parent, entries: [{name, path, dir, size}], available}` (hidden files skipped; `available` = bytes free for this user on its filesystem, null if unknown) |
 | `POST /api/fs/upload?dir=&name=[&overwrite=true][&unique=true]` | Raw request body (no size limit) stored as `dir/name` via a hidden `.name.part` file renamed on completion → `{path, size}`; with `unique` a taken name becomes `name (2).ext` etc. (the UI always sends it); otherwise 409 if it exists; 400 for names with path components or a leading dot |
 | `GET /api/fs/download?path=` | File as an attachment (`Content-Disposition` with UTF-8 name, range requests supported); 400 for directories |
 | `POST /api/dialog/{open-video\|save-video\|open-preset\|save-preset}` | Native dialog (desktop) → `{path}` |
@@ -409,7 +412,7 @@ parameters change (render options do not change it).
   (WebSocket with reconnect and per-view sequence numbers), `protocol.ts` (binary frame header),
   `store.svelte.ts` (the single reactive app store: session state, playhead, playback loop, view
   mode, coalesced preset patches, toasts), `renderer.ts` (WebGL2 drawing with Canvas 2D fallback),
-  helpers `time.ts`, `paths.ts` (POSIX + Windows), `args.ts`, `merge.ts`.
+  helpers `time.ts`, `paths.ts` (POSIX + Windows), `args.ts`, `merge.ts`, `size.ts`.
 - `src/components/`: `TopBar`, `Viewer` (view modes, zoom/pan, split handle), `Timeline` (scrub
   track with cached ranges, reference marker, render range), `ParamsPanel`, `RenderDialog`,
   `SettingsDialog`, `FileBrowser` (server mode; native dialogs in desktop mode), `Modal`,
@@ -551,7 +554,7 @@ received via `window.mxDebug.store.sample`; frame/revision synchronisation uses 
 | Render dialog: defaults, command preview, codecs, CRF, speed, pixel format, extra args, audio, range, resolution, PNG sequence, output browser, overwrite confirmation, cancel, errors, progress chip | `render.spec.ts` |
 | Settings: memory estimate, persistence, preview resolution, validation | `settings.spec.ts` |
 | Preset save/load, invalid presets | `presets.spec.ts` |
-| Upload (opens the video, no overwrite), download from the file browser and of finished renders | `files.spec.ts` |
+| Upload (opens the video, no overwrite; several files at once, no type filter), free space, download from the file browser and of finished renders | `files.spec.ts` |
 | Parameter sync between clients | `sync.spec.ts` |
 
 ---
