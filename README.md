@@ -16,7 +16,7 @@ Highlights the motion in a video by comparing each frame with an earlier one, ba
 ## Run
 
 Installers for Linux, Windows (x86_64 and arm64) and macOS (universal) are attached to the GitHub
-releases; builds of the latest
+releases, plus a portable Windows zip (unpack, run `motion-extractor.exe`); builds of the latest
 `main` are in the rolling `nightly` pre-release. Linux packages need ffmpeg installed; the other
 builds include it.
 
