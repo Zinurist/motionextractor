@@ -18,6 +18,17 @@ const VIDEO_EXTENSIONS: &[&str] = &[
     "gif", "ogv", "3gp",
 ];
 
+/// Each extension in lower and upper case: GTK matches filter patterns case-sensitively, so `*.mov`
+/// would hide `IMG_0001.MOV`.
+fn both_cases(extensions: &[&str]) -> Vec<String> {
+    let mut out = Vec::with_capacity(extensions.len() * 2);
+    for e in extensions {
+        out.push(e.to_lowercase());
+        out.push(e.to_uppercase());
+    }
+    out
+}
+
 /// Native file dialogs through the Tauri dialog plugin (called from server worker threads; the
 /// plugin runs them on the UI thread).
 #[derive(Default)]
@@ -26,7 +37,13 @@ struct NativeDialogs(OnceLock<AppHandle>);
 impl NativeDialogs {
     fn pick(&self, save: bool, filter: (&str, &[&str]), suggested: &str) -> Option<PathBuf> {
         let app = self.0.get()?;
-        let mut dialog = app.dialog().file().add_filter(filter.0, filter.1);
+        let extensions = both_cases(filter.1);
+        let extensions: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        let mut dialog = app
+            .dialog()
+            .file()
+            .add_filter(filter.0, &extensions)
+            .add_filter("All files", &["*"]);
         if !suggested.is_empty() {
             let path = PathBuf::from(suggested);
             if let Some(dir) = path.parent().filter(|d| d.is_dir()) {
@@ -155,4 +172,14 @@ fn random_token() -> String {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).expect("system random number generator");
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filters_match_both_cases() {
+        assert_eq!(both_cases(&["mov", "mp4"]), ["mov", "MOV", "mp4", "MP4"]);
+    }
 }
