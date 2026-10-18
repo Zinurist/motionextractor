@@ -90,6 +90,11 @@ async fn info_and_session() {
     assert_eq!(info["mode"], "server");
     assert_eq!(info["ffmpeg"]["ok"], true);
     assert_eq!(info["dialogs"], false);
+    let version = info["version"].as_str().unwrap();
+    assert!(
+        version.split('.').count() == 2 && version.split('.').all(|n| n.parse::<u32>().is_ok()),
+        "version is X.Y: {version}"
+    );
     let (_, session) = s.get("/api/session").await;
     assert_eq!(session["video"], Value::Null);
     assert_eq!(session["preset"]["effect"]["color"], "#ffffff");

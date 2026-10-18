@@ -272,6 +272,14 @@ fn http_get(addr: &str, path: &str) -> String {
 }
 
 #[test]
+fn version_is_major_minor() {
+    let out = ok(&["--version"]);
+    let version = out.trim().strip_prefix("motion-extractor ").unwrap();
+    let expected = env!("CARGO_PKG_VERSION").strip_suffix(".0").unwrap();
+    assert_eq!(version, expected, "X.Y, crate version X.Y.0");
+}
+
+#[test]
 fn serve_prints_url_and_answers() {
     use std::io::{BufRead, BufReader};
     let (dir, input) = setup(MovingSquare::default());
