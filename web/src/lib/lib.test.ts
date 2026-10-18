@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseFrame, FRAME_MAGIC } from './protocol';
 import { clamp, formatDuration, formatTime, offsetFrames } from './time';
 import { basename, defaultOutput, dirname, join, withExtension } from './paths';
+import { formatBytes } from './size';
 
 describe('protocol', () => {
   it('parses frame headers', () => {
@@ -136,5 +137,16 @@ describe('playback', () => {
     expect(lagging(14, { index: 10, exact: true })).toBe(true);
     expect(lagging(10, { index: 8, exact: false })).toBe(true);
     expect(lagging(10, null)).toBe(true);
+  });
+});
+
+describe('size', () => {
+  it('formats bytes with binary units', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(1023)).toBe('1023 B');
+    expect(formatBytes(1536)).toBe('1.5 KB');
+    expect(formatBytes(5 * 1048576)).toBe('5.0 MB');
+    expect(formatBytes(1.25 * 1024 ** 3)).toBe('1.3 GB');
+    expect(formatBytes(3 * 1024 ** 4)).toBe('3.0 TB');
   });
 });

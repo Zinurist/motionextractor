@@ -26,6 +26,32 @@ test('uploads a video and opens it', async ({ app, server }) => {
   }
 });
 
+test('uploads several videos at once, of any type', async ({ app, server }) => {
+  const elsewhere = mkdtempSync(join(tmpdir(), 'mx-e2e-upload-'));
+  try {
+    // Upper-case extensions like the .MOV files from phones must not be filtered out.
+    const a = makeSquareVideo(join(elsewhere, 'IMG_0001.MOV'), { frames: 20 });
+    const b = makeSquareVideo(join(elsewhere, 'IMG_0002.MOV'), { frames: 30 });
+    await app.getByTestId('open-video').click();
+    await expect(app.getByTestId('fb-upload-input')).not.toHaveAttribute('accept');
+    await expect(app.getByTestId('fb-upload')).toBeEnabled();
+    await app.getByTestId('fb-upload-input').setInputFiles([a, b]);
+    // Several uploads keep the browser open with the new files listed.
+    await expect(app.locator('[data-name="IMG_0002.MOV"]')).toBeVisible();
+    await expect(app.locator('[data-name="IMG_0001.MOV"]')).toBeVisible();
+    expect(statSync(join(server.dir, 'IMG_0001.MOV')).size).toBe(statSync(a).size);
+    await app.locator('[data-name="IMG_0002.MOV"]').click();
+    await expect(app.getByTestId('video-name')).toContainText('30 frames');
+  } finally {
+    removeDir(elsewhere);
+  }
+});
+
+test('shows the free space of the directory', async ({ app }) => {
+  await app.getByTestId('open-video').click();
+  await expect(app.getByTestId('fb-free')).toHaveText(/^\d+(\.\d)? (B|KB|MB|GB|TB|PB) free$/);
+});
+
 test('downloads files from the file browser', async ({ app, server }) => {
   await app.getByTestId('open-video').click();
   const entry = app.locator('[data-testid="fb-entries"] li', {

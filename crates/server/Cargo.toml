@@ -25,6 +25,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "fs", "io-util"] }
 tracing.workspace = true
+fs4 = "1"
 
 [dev-dependencies]
 mx-media = { workspace = true, features = ["testing"] }

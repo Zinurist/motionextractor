@@ -3,6 +3,7 @@
   import { api, downloadUrl, uploadFile } from '../lib/api';
   import { basename, join } from '../lib/paths';
   import { store } from '../lib/store.svelte';
+  import { formatBytes } from '../lib/size';
   import type { Listing } from '../lib/types';
   import Icon from './Icon.svelte';
   import Modal from './Modal.svelte';
@@ -55,28 +56,41 @@
 
   const roots = $derived(store.info?.roots ?? []);
 
-  /** Upload progress (0..1) while a file is being uploaded. */
-  let uploading = $state<{ name: string; progress: number } | null>(null);
+  /** The file being uploaded (number `index` of `count`) and its progress (0..1). */
+  let uploading = $state<{ name: string; index: number; count: number; progress: number } | null>(
+    null,
+  );
   let fileInput = $state<HTMLInputElement>();
 
-  /** Uploads a video into the current directory and opens it. */
-  async function upload(file: File | undefined) {
-    if (!file || !listing) return;
-    const name = file.name;
-    uploading = { name, progress: 0 };
+  /**
+   * Uploads files into the current directory, one after another. A single upload is opened right
+   * away; after several the listing stays open to pick one.
+   */
+  async function upload(files: File[]) {
+    if (!files.length || !listing) return;
+    const dir = listing.path;
+    const done: string[] = [];
     try {
-      const done = await uploadFile(listing.path, file, name, (p) => {
-        if (uploading) uploading.progress = p;
-      });
-      store.toast('info', `Uploaded ${basename(done.path)}`);
-      onPick(done.path);
+      for (const [i, file] of files.entries()) {
+        uploading = { name: file.name, index: i + 1, count: files.length, progress: 0 };
+        const result = await uploadFile(dir, file, file.name, (p) => {
+          if (uploading) uploading.progress = p;
+        });
+        done.push(result.path);
+      }
     } catch (e) {
       store.error(e);
-      void load(listing.path);
     } finally {
       uploading = null;
       if (fileInput) fileInput.value = '';
     }
+    if (done.length === 1 && files.length === 1) {
+      store.toast('info', `Uploaded ${basename(done[0])}`);
+      onPick(done[0]);
+      return;
+    }
+    if (done.length) store.toast('info', `Uploaded ${done.length} files`);
+    void load(dir);
   }
 </script>
 
@@ -93,6 +107,11 @@
     <span class="mono path"
       ><span class="ltr" data-testid="fb-path">{listing?.path ?? ''}</span></span
     >
+    {#if listing?.available != null}
+      <span class="muted free" data-testid="fb-free" title="Free space in this directory"
+        >{formatBytes(listing.available)} free</span
+      >
+    {/if}
     {#if roots.length > 1}
       <select aria-label="Root" onchange={(e) => load(e.currentTarget.value)}>
         {#each roots as r (r)}<option value={r}>{r}</option>{/each}
@@ -114,7 +133,7 @@
         >
           <Icon name={e.dir ? 'folder' : VIDEO.test(e.name) ? 'film' : 'file'} />
           <span class="name">{e.name}</span>
-          {#if !e.dir}<span class="muted size">{(e.size / 1048576).toFixed(1)} MB</span>{/if}
+          {#if !e.dir}<span class="muted size">{formatBytes(e.size)}</span>{/if}
         </button>
         {#if !e.dir}
           <a
@@ -140,7 +159,11 @@
 
   {#if uploading}
     <div class="bar" data-testid="fb-upload-progress">
-      <span class="muted">Uploading {uploading.name}…</span>
+      <span class="muted"
+        >Uploading {uploading.name}…{uploading.count > 1
+          ? ` (${uploading.index}/${uploading.count})`
+          : ''}</span
+      >
       <progress max="1" value={uploading.progress}></progress>
       <span class="mono muted">{Math.round(uploading.progress * 100)}%</span>
     </div>
@@ -152,15 +175,15 @@
         bind:this={fileInput}
         class="hidden"
         type="file"
-        accept="video/*,.mkv,.ts,.mts,.m2ts,.flv,.wmv"
+        multiple
         data-testid="fb-upload-input"
-        onchange={(e) => upload(e.currentTarget.files?.[0])}
+        onchange={(e) => upload(Array.from(e.currentTarget.files ?? []))}
       />
       <button
         class="upload"
         disabled={!listing || !!uploading}
         data-testid="fb-upload"
-        onclick={() => fileInput?.click()}><Icon name="upload" /> Upload video…</button
+        onclick={() => fileInput?.click()}><Icon name="upload" /> Upload videos…</button
       >
     {/if}
     <button onclick={onCancel}>Cancel</button>
@@ -182,6 +205,11 @@
 
   .bar input {
     flex: 1;
+  }
+
+  .free {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .path {

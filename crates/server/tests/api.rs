@@ -235,6 +235,10 @@ async fn settings_files_and_dialogs() {
             .any(|e| e["name"].as_str().unwrap().ends_with(".mkv"))
     );
     assert_eq!(list["parent"], Value::Null, "cannot leave the root");
+    assert!(
+        list["available"].as_u64().unwrap() > 0,
+        "free space: {list}"
+    );
     let (status, _) = s.get("/api/fs/list?path=/").await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 

@@ -124,6 +124,8 @@ export interface Listing {
   path: string;
   parent: string | null;
   entries: { name: string; path: string; dir: boolean; size: number }[];
+  /** Bytes available on the directory's filesystem (null if unknown). */
+  available: number | null;
 }
 
 export type ServerEvent =

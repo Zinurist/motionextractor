@@ -95,6 +95,8 @@ pub struct Listing {
     path: String,
     parent: Option<String>,
     entries: Vec<Entry>,
+    /// Bytes available to this user on the directory's filesystem (null if unknown).
+    available: Option<u64>,
 }
 
 pub async fn list(
@@ -138,6 +140,7 @@ pub async fn list(
         path: dir.display().to_string(),
         parent,
         entries,
+        available: fs4::available_space(&dir).ok(),
     }))
 }
 
